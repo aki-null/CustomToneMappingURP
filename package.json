@@ -1,0 +1,17 @@
+{
+  "name": "net.aki-null.tonemapping",
+  "displayName": "Custom Tone Mapping for URP",
+  "version": "1.0.0",
+  "unity": "6000.0",
+  "description": "Custom tone mapping extension for Universal Render Pipeline",
+  "keywords": ["tonemapping", "hdr", "urp", "lut"],
+  "license": "MIT",
+  "author": {
+    "name": "aki-null"
+  },
+  "dependencies": {
+    "com.unity.burst": "1.8.13",
+    "com.unity.mathematics": "1.3.2",
+    "com.unity.collections": "2.4.0"
+  }
+}

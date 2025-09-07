@@ -1,0 +1,19 @@
+{
+  "name": "net.aki-null.ToneMapping.URP",
+  "rootNamespace": "CustomToneMapping.URP",
+  "references": [
+    "net.aki-null.CustomToneMapping.Baker",
+    "Unity.RenderPipelines.Core.Runtime",
+    "Unity.Mathematics",
+    "Unity.Collections"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

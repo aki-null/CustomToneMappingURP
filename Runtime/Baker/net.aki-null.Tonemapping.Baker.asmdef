@@ -1,0 +1,19 @@
+{
+  "name": "net.aki-null.CustomToneMapping.Baker",
+  "rootNamespace": "CustomToneMapping.Baker",
+  "references": [
+    "Unity.Burst",
+    "Unity.Mathematics",
+    "Unity.Collections",
+    "Unity.RenderPipelines.Core.Runtime"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": true,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

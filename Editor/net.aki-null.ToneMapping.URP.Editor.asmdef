@@ -1,0 +1,26 @@
+{
+  "name": "net.aki-null.ToneMapping.URP.Editor",
+  "rootNamespace": "CustomToneMapping.URP.Editor",
+  "references": [
+    "net.aki-null.ToneMapping.URP",
+    "net.aki-null.ToneMapping.URP.RendererFeatures",
+    "net.aki-null.CustomToneMapping.Baker",
+    "Unity.Mathematics",
+    "Unity.Burst",
+    "Unity.RenderPipelines.Core.Editor",
+    "Unity.RenderPipelines.Core.Runtime",
+    "Unity.RenderPipelines.Universal.Runtime",
+    "Unity.RenderPipelines.Universal.Editor"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": true,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}
