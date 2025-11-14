@@ -10,6 +10,7 @@ namespace CustomToneMapping.URP.Editor
     public sealed class CustomToneMappingVolumeEditor : VolumeComponentEditor
     {
         private SerializedDataParameter _mode;
+        private SerializedDataParameter _lutSize;
         private SerializedDataParameter _lutTexture;
 
         // Override to enable Additional Properties feature
@@ -23,6 +24,7 @@ namespace CustomToneMapping.URP.Editor
 
                 var o = new PropertyFetcher<CustomToneMapping>(serializedObject);
                 _mode = Unpack(o.Find(x => x.mode));
+                _lutSize = Unpack(o.Find(x => x.lutSize));
                 _lutTexture = Unpack(o.Find(x => x.lutTexture));
             }
             catch (System.Exception)
@@ -53,6 +55,13 @@ namespace CustomToneMapping.URP.Editor
             PropertyField(_mode);
 
             var currentMode = (ToneMappingMode)_mode.value.intValue;
+
+            // Only show LUT size for baked tone mapping modes
+            // CustomLUT uses the actual texture dimensions
+            if (currentMode != ToneMappingMode.None && currentMode != ToneMappingMode.CustomLUT)
+            {
+                PropertyField(_lutSize);
+            }
 
             if (currentMode == ToneMappingMode.CustomLUT)
             {

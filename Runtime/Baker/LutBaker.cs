@@ -19,6 +19,9 @@ namespace CustomToneMapping.Baker
     {
         private static readonly ProfilerMarker BakeLutMarker = new("CustomToneMapping.BakeLUT");
 
+        public static int GetLutWidth(int lutSize) => lutSize * lutSize;
+        public static int GetLutHeight(int lutSize) => lutSize;
+
         public static void BakeStripLut(ILutConfig config, ref Texture2D texture)
         {
             switch (config)
@@ -51,13 +54,13 @@ namespace CustomToneMapping.Baker
             return GraphicsFormat.R8G8B8A8_UNorm;
         }
 
-        internal static void BakeStripLut<T>(T toneMap, bool isHdrOutput, ref Texture2D texture)
+        internal static void BakeStripLut<T>(T toneMap, bool isHdrOutput, int lutSize, ref Texture2D texture)
             where T : struct, IToneMap
         {
             using (BakeLutMarker.Auto())
             {
-                const int h = Constant.LutHeight;
-                const int w = Constant.LutWidth;
+                int h = GetLutHeight(lutSize);
+                int w = GetLutWidth(lutSize);
 
                 // Determine the format to use
                 GraphicsFormat format = ChooseFormat();
@@ -81,14 +84,14 @@ namespace CustomToneMapping.Baker
                     };
                 }
 
-                const int pixelCount = w * h;
+                int pixelCount = w * h;
                 using var pixels =
                     new NativeArray<half4>(pixelCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
 
                 var job = new LutJob<T>
                 {
                     Width = w,
-                    LutSize = h,
+                    LutSize = lutSize,
                     Tonemapper = toneMap,
                     Output = pixels,
                     LutInputColorspace = isHdrOutput ? Colorspace.Rec2020 : Colorspace.Rec709,

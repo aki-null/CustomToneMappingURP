@@ -10,12 +10,6 @@ namespace CustomToneMapping.URP
         private static uint _lastKey;
         private static Texture2D _lutTexture;
 
-        private static readonly Vector3 LutParamsSample = new Vector3(
-            1.0f / Constant.LutWidth,
-            1.0f / Constant.LutHeight,
-            Constant.LutHeight - 1
-        );
-
         private const string TonemapCustomKeyword = "_TONEMAP_CUSTOM";
         private static readonly int CustomTonemapLut = Shader.PropertyToID("_CustomTonemapLut");
         private static readonly int CustomTonemapParams = Shader.PropertyToID("_CustomTonemap_Params");
@@ -23,10 +17,21 @@ namespace CustomToneMapping.URP
         // Public getter for cached LUT (used by editor tools)
         public static Texture2D CachedLutTexture => _lutTexture;
 
+        private static Vector3 GetLutParams(int lutSize)
+        {
+            int lutWidth = LutBaker.GetLutWidth(lutSize);
+            int lutHeight = LutBaker.GetLutHeight(lutSize);
+            return new Vector3(
+                1.0f / lutWidth,
+                1.0f / lutHeight,
+                lutHeight - 1
+            );
+        }
+
         private static bool TryGetOrBakeLut(ILutConfig config, out Texture2D tex, out Vector3 lutParamsSample)
         {
             tex = null;
-            lutParamsSample = LutParamsSample; // Use pre-calculated constant
+            lutParamsSample = GetLutParams(config.LutSize);
 
             var key = config.ConfigHash;
 
@@ -49,7 +54,7 @@ namespace CustomToneMapping.URP
         }
 
         private static bool TryGetOrBakeLut(GT7ToneMapping vol, HDROutputUtils.HDRDisplayInformation? hdrDisplayInfo,
-            out Texture2D tex, out Vector3 lutParamsSample)
+            int lutSize, out Texture2D tex, out Vector3 lutParamsSample)
         {
             tex = null;
             lutParamsSample = default;
@@ -63,12 +68,12 @@ namespace CustomToneMapping.URP
                 targetPeakNits = hdrDisplayInfo.Value.maxToneMapLuminance;
             }
 
-            var config = vol.ToConfig(targetPeakNits, hdr);
+            var config = vol.ToConfig(targetPeakNits, hdr, lutSize);
             return TryGetOrBakeLut(config, out tex, out lutParamsSample);
         }
 
         private static bool TryGetOrBakeLut(AgXToneMapping vol, HDROutputUtils.HDRDisplayInformation? hdrDisplayInfo,
-            out Texture2D tex, out Vector3 lutParamsSample)
+            int lutSize, out Texture2D tex, out Vector3 lutParamsSample)
         {
             tex = null;
             lutParamsSample = default;
@@ -82,12 +87,12 @@ namespace CustomToneMapping.URP
                 targetPeakNits = hdrDisplayInfo.Value.maxToneMapLuminance;
             }
 
-            var config = vol.ToConfig(targetPeakNits, hdr);
+            var config = vol.ToConfig(targetPeakNits, hdr, lutSize);
             return TryGetOrBakeLut(config, out tex, out lutParamsSample);
         }
 
         private static bool TryGetOrBakeLut(GTToneMapping vol, HDROutputUtils.HDRDisplayInformation? hdrDisplayInfo,
-            out Texture2D tex, out Vector3 lutParamsSample)
+            int lutSize, out Texture2D tex, out Vector3 lutParamsSample)
         {
             tex = null;
             lutParamsSample = default;
@@ -101,7 +106,7 @@ namespace CustomToneMapping.URP
                 targetPeakNits = hdrDisplayInfo.Value.maxToneMapLuminance;
             }
 
-            var config = vol.ToConfig(targetPeakNits, hdr);
+            var config = vol.ToConfig(targetPeakNits, hdr, lutSize);
             return TryGetOrBakeLut(config, out tex, out lutParamsSample);
         }
 
@@ -115,13 +120,14 @@ namespace CustomToneMapping.URP
                 return false;
             }
 
+            int lutSize = (int)customMode.lutSize.value;
             Texture2D lut;
             switch (customMode.mode.value)
             {
                 case ToneMappingMode.GT:
                 {
                     var gt = VolumeManager.instance.stack.GetComponent<GTToneMapping>();
-                    if (TryGetOrBakeLut(gt, hdrDisplayInfo, out lut, out var sample))
+                    if (TryGetOrBakeLut(gt, hdrDisplayInfo, lutSize, out lut, out var sample))
                     {
                         SetupMaterial(material, lut, sample);
                     }
@@ -131,7 +137,7 @@ namespace CustomToneMapping.URP
                 case ToneMappingMode.GT7:
                 {
                     var gt7 = VolumeManager.instance.stack.GetComponent<GT7ToneMapping>();
-                    if (TryGetOrBakeLut(gt7, hdrDisplayInfo, out lut, out var sample))
+                    if (TryGetOrBakeLut(gt7, hdrDisplayInfo, lutSize, out lut, out var sample))
                     {
                         SetupMaterial(material, lut, sample);
                     }
@@ -141,7 +147,7 @@ namespace CustomToneMapping.URP
                 case ToneMappingMode.AgX:
                 {
                     var agx = VolumeManager.instance.stack.GetComponent<AgXToneMapping>();
-                    if (TryGetOrBakeLut(agx, hdrDisplayInfo, out lut, out var sample))
+                    if (TryGetOrBakeLut(agx, hdrDisplayInfo, lutSize, out lut, out var sample))
                     {
                         SetupMaterial(material, lut, sample);
                     }

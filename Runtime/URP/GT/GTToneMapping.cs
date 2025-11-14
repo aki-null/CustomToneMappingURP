@@ -43,7 +43,7 @@ namespace CustomToneMapping.URP.GT
         [Tooltip("Black level offset (b parameter)")]
         public ClampedFloatParameter blackOffset = new(DefaultBlackOffset, 0.0f, 0.1f);
 
-        public GTConfig ToConfig(float peakNits, bool isHdrOutput)
+        public GTConfig ToConfig(float peakNits, bool isHdrOutput, int lutSize)
         {
             return new GTConfig
             {
@@ -55,7 +55,8 @@ namespace CustomToneMapping.URP.GT
                 LinearSectionStart = linearSectionStart.value,
                 LinearSectionLength = linearSectionLength.value,
                 BlackTightness = blackTightness.value,
-                BlackOffset = blackOffset.value
+                BlackOffset = blackOffset.value,
+                LutSize = lutSize
             };
         }
     }

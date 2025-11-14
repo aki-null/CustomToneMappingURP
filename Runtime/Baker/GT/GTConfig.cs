@@ -14,6 +14,8 @@ namespace CustomToneMapping.Baker.GT
         public float BlackTightness; // c parameter
         public float BlackOffset; // b parameter
 
+        public int LutSize { get; set; }
+
         public uint ConfigHash
         {
             get
@@ -29,6 +31,7 @@ namespace CustomToneMapping.Baker.GT
                 h = HashUtil.Hash32(h, LinearSectionLength);
                 h = HashUtil.Hash32(h, BlackTightness);
                 h = HashUtil.Hash32(h, BlackOffset);
+                h = HashUtil.Hash32(h, (uint)LutSize);
                 return h;
             }
         }

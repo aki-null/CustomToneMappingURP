@@ -52,7 +52,7 @@ namespace CustomToneMapping.URP
         public ClampedFloatParameter fadeStart = new(DefaultFadeStart, 0.0f, 2.0f);
         public ClampedFloatParameter fadeEnd = new(DefaultFadeEnd, 0.0f, 4.0f);
 
-        public GT7Config ToConfig(float peakNits, bool isHdrOutput)
+        public GT7Config ToConfig(float peakNits, bool isHdrOutput, int lutSize)
         {
             return new GT7Config
             {
@@ -69,6 +69,7 @@ namespace CustomToneMapping.URP
                 BlendRatio = blendRatio.value,
                 FadeStart = fadeStart.value,
                 FadeEnd = fadeEnd.value,
+                LutSize = lutSize
             };
         }
     }

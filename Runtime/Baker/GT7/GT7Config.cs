@@ -47,10 +47,12 @@ namespace CustomToneMapping.Baker.GT7
                 h = HashUtil.Hash32(h, BlendRatio);
                 h = HashUtil.Hash32(h, FadeStart);
                 h = HashUtil.Hash32(h, FadeEnd);
+                h = HashUtil.Hash32(h, (uint)LutSize);
                 return h;
             }
         }
 
         public bool IsHdrOutput { get; set; }
+        public int LutSize { get; set; }
     }
 }
