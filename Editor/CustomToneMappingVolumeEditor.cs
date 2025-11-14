@@ -43,10 +43,10 @@ namespace CustomToneMapping.URP.Editor
 
             DrawModeSelection();
 
-            // Draw additional properties section (Debug Export)
+            // Draw additional properties section (LUT Size, Debug Export)
             if (showAdditionalProperties)
             {
-                DrawDebugExportSection();
+                DrawAdditionalPropertiesSection();
             }
         }
 
@@ -55,13 +55,6 @@ namespace CustomToneMapping.URP.Editor
             PropertyField(_mode);
 
             var currentMode = (ToneMappingMode)_mode.value.intValue;
-
-            // Only show LUT size for baked tone mapping modes
-            // CustomLUT uses the actual texture dimensions
-            if (currentMode != ToneMappingMode.None && currentMode != ToneMappingMode.CustomLUT)
-            {
-                PropertyField(_lutSize);
-            }
 
             if (currentMode == ToneMappingMode.CustomLUT)
             {
@@ -90,11 +83,20 @@ namespace CustomToneMapping.URP.Editor
             }
         }
 
-        private void DrawDebugExportSection()
+        private void DrawAdditionalPropertiesSection()
         {
-            var mode = (ToneMappingMode)_mode.value.intValue;
+            var currentMode = (ToneMappingMode)_mode.value.intValue;
+
+            // Only show LUT size for baked tone mapping modes
+            // CustomLUT uses the actual texture dimensions
+            if (currentMode != ToneMappingMode.None && currentMode != ToneMappingMode.CustomLUT)
+            {
+                PropertyField(_lutSize);
+            }
+
+            // Debug export section
             var lutTexture = _lutTexture.value.objectReferenceValue as Texture2D;
-            LutExporter.DrawDebugExportSection(mode, lutTexture);
+            LutExporter.DrawDebugExportSection(currentMode, lutTexture);
         }
     }
 }
