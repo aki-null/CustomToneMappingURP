@@ -50,8 +50,8 @@ Since adding new tone mapping functions to URP is not officially supported throu
    - Set to **None** when using the Renderer Feature method
    - Set to **Custom** when using the URP modification method
 2. Add a **Custom Tone Mapping** volume component and select a mode
-3. Configure the tone mapping parameters
-   - Each mode has a dedicated volume component
+3. Add the mode-specific volume component to configure parameters
+   - Each mode requires its own dedicated volume component (e.g., **GT Tone Mapping**, **GT7 Tone Mapping**, **AgX Tone Mapping**, etc.)
 
 ## Technical Details
 
@@ -101,8 +101,9 @@ The Custom Tone Mapping Renderer Feature enables custom tone mapping without mod
 #### Setup
 1. Add **Custom Tone Mapping Renderer Feature** to your Universal Renderer Data
 2. Set URP's Tonemapping mode to **None** in your Volume Profile
-3. Add a **Custom Tone Mapping** volume component
-4. Configure the tone mapping mode
+3. Add a **Custom Tone Mapping** volume component and select a mode
+4. Add the mode-specific volume component to configure parameters
+   - Each mode requires its own dedicated volume component (e.g., **GT Tone Mapping**, **GT7 Tone Mapping**, **AgX Tone Mapping**, etc.)
 
 #### Technical Details
 The renderer feature injects a tone mapping pass into the render pipeline by intercepting the color grading LUT after URP's LUT generation pass and applying custom tone mapping. This approach provides better integration with the pipeline compared to directly tone mapping the framebuffer.
