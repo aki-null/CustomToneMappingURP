@@ -18,7 +18,7 @@ namespace CustomToneMapping.Baker.AgX
             var mapper = new AgXToneMapping();
             mapper.Initialize(settings);
 
-            LutBaker.BakeStripLut(mapper, settings.IsHdrOutput, ref texture);
+            LutBaker.BakeStripLut(mapper, settings.IsHdrOutput, settings.LutSize, ref texture);
         }
     }
 }

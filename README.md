@@ -32,6 +32,8 @@ Since adding new tone mapping functions to URP is not officially supported throu
     * Runtime LUT generation supports variable peak brightness configurations
 * Custom LUT support
     * Allows use of external LogC-encoded lookup tables
+* Configurable LUT size (32³ to 65³) for quality/memory tradeoff
+    * Found in the Additional Properties section of the Custom Tone Mapping component
 
 ## Prerequisites
 

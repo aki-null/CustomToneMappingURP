@@ -25,7 +25,7 @@ namespace CustomToneMapping.Baker.GT7
                 mapper.InitializeAsSdr(settings);
             }
 
-            LutBaker.BakeStripLut(mapper, settings.IsHdrOutput, ref texture);
+            LutBaker.BakeStripLut(mapper, settings.IsHdrOutput, settings.LutSize, ref texture);
         }
     }
 }

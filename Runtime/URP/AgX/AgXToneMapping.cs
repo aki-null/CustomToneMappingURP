@@ -36,7 +36,7 @@ namespace CustomToneMapping.URP
             displayName = "AgX Tone Mapping";
         }
 
-        public AgXConfig ToConfig(float peakNits, bool isHdrOutput)
+        public AgXConfig ToConfig(float peakNits, bool isHdrOutput, int lutSize)
         {
             // Configure look
             var lookConfig = AgXLookConfig.GetPreset(look.value);
@@ -51,7 +51,8 @@ namespace CustomToneMapping.URP
                 HdrExtraPowerFactor = hdrExtraPowerFactor.value,
                 UseP3Limit = useP3Limit.value,
                 LookConfig = lookConfig,
-                IsHdrOutput = isHdrOutput
+                IsHdrOutput = isHdrOutput,
+                LutSize = lutSize
             };
         }
     }

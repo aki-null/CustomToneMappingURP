@@ -17,7 +17,13 @@ namespace CustomToneMapping.Baker
     [BurstCompile]
     public static class LutBaker
     {
+        public const int MinLutSize = 32;
+        public const int MaxLutSize = 65;
+
         private static readonly ProfilerMarker BakeLutMarker = new("CustomToneMapping.BakeLUT");
+
+        public static int GetLutWidth(int lutSize) => lutSize * lutSize;
+        public static int GetLutHeight(int lutSize) => lutSize;
 
         public static void BakeStripLut(ILutConfig config, ref Texture2D texture)
         {
@@ -47,22 +53,28 @@ namespace CustomToneMapping.Baker
             if (SystemInfo.IsFormatSupported(GraphicsFormat.R32G32B32A32_SFloat, usage))
                 return GraphicsFormat.R32G32B32A32_SFloat;
 
-            if (SystemInfo.IsFormatSupported(GraphicsFormat.B10G11R11_UFloatPack32, usage))
-                return GraphicsFormat.B10G11R11_UFloatPack32;
-
-            // Fallback to 8-bit format, but this will look bad
+            // Fallback to 8-bit format
             return GraphicsFormat.R8G8B8A8_UNorm;
         }
 
-        internal static void BakeStripLut<T>(T toneMap, bool isHdrOutput, ref Texture2D texture)
+        internal static void BakeStripLut<T>(T toneMap, bool isHdrOutput, int lutSize, ref Texture2D texture)
             where T : struct, IToneMap
         {
+            if (lutSize < MinLutSize || lutSize > MaxLutSize)
+            {
+                throw new ArgumentOutOfRangeException(nameof(lutSize),
+                    $"LUT size must be between {MinLutSize} and {MaxLutSize}");
+            }
+
             using (BakeLutMarker.Auto())
             {
-                const int h = Constant.LutHeight;
-                const int w = Constant.LutWidth;
+                var h = GetLutHeight(lutSize);
+                var w = GetLutWidth(lutSize);
 
-                if (!IsTextureReusable(texture, w, h))
+                // Determine the format to use
+                var format = ChooseFormat();
+
+                if (!IsTextureReusable(texture, w, h, format))
                 {
                     CoreUtils.Destroy(texture);
                     texture = null;
@@ -73,7 +85,7 @@ namespace CustomToneMapping.Baker
                     const TextureCreationFlags flags = TextureCreationFlags.None |
                                                        TextureCreationFlags.DontUploadUponCreate |
                                                        TextureCreationFlags.DontInitializePixels;
-                    texture = new Texture2D(w, h, ChooseFormat(), flags)
+                    texture = new Texture2D(w, h, format, flags)
                     {
                         wrapMode = TextureWrapMode.Clamp,
                         filterMode = FilterMode.Bilinear,
@@ -81,14 +93,14 @@ namespace CustomToneMapping.Baker
                     };
                 }
 
-                const int pixelCount = w * h;
+                var pixelCount = w * h;
                 using var pixels =
                     new NativeArray<half4>(pixelCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
 
                 var job = new LutJob<T>
                 {
                     Width = w,
-                    LutSize = h,
+                    LutSize = lutSize,
                     Tonemapper = toneMap,
                     Output = pixels,
                     LutInputColorspace = isHdrOutput ? Colorspace.Rec2020 : Colorspace.Rec709,
@@ -98,16 +110,85 @@ namespace CustomToneMapping.Baker
                 var handle = job.Schedule(pixelCount, 64);
                 handle.Complete();
 
-                texture.SetPixelData(pixels, 0);
+                SetPixelDataWithConversion(texture, pixels, format);
                 texture.Apply(updateMipmaps: false, makeNoLongerReadable: false);
             }
         }
 
-        private static bool IsTextureReusable(Texture2D texture, int expectedWidth, int expectedHeight)
+        private static void SetPixelDataWithConversion(Texture2D texture, NativeArray<half4> sourcePixels,
+            GraphicsFormat format)
+        {
+            // For R16G16B16A16_SFloat, no conversion needed - direct copy
+            if (format == GraphicsFormat.R16G16B16A16_SFloat)
+            {
+                texture.SetPixelData(sourcePixels, 0);
+                return;
+            }
+
+            // For other formats, convert the pixel data
+            var pixelCount = sourcePixels.Length;
+
+            switch (format)
+            {
+                case GraphicsFormat.R32G32B32A32_SFloat:
+                {
+                    var converted = new NativeArray<float4>(pixelCount, Allocator.Temp,
+                        NativeArrayOptions.UninitializedMemory);
+                    try
+                    {
+                        for (var i = 0; i < pixelCount; i++)
+                        {
+                            converted[i] = new float4(sourcePixels[i]);
+                        }
+
+                        texture.SetPixelData(converted, 0);
+                    }
+                    finally
+                    {
+                        converted.Dispose();
+                    }
+
+                    break;
+                }
+
+                case GraphicsFormat.R8G8B8A8_UNorm:
+                {
+                    var converted = new NativeArray<byte>(pixelCount * 4, Allocator.Temp,
+                        NativeArrayOptions.UninitializedMemory);
+                    try
+                    {
+                        for (var i = 0; i < pixelCount; i++)
+                        {
+                            var pixel = sourcePixels[i];
+                            var baseIdx = i * 4;
+                            converted[baseIdx + 0] = (byte)math.clamp(pixel.x * 255f + 0.5f, 0, 255);
+                            converted[baseIdx + 1] = (byte)math.clamp(pixel.y * 255f + 0.5f, 0, 255);
+                            converted[baseIdx + 2] = (byte)math.clamp(pixel.z * 255f + 0.5f, 0, 255);
+                            converted[baseIdx + 3] = (byte)math.clamp(pixel.w * 255f + 0.5f, 0, 255);
+                        }
+
+                        texture.SetPixelData(converted, 0);
+                    }
+                    finally
+                    {
+                        converted.Dispose();
+                    }
+
+                    break;
+                }
+
+                default:
+                    throw new NotSupportedException($"Texture format {format} is not supported for LUT baking");
+            }
+        }
+
+        private static bool IsTextureReusable(Texture2D texture, int expectedWidth, int expectedHeight,
+            GraphicsFormat expectedFormat)
         {
             return texture != null &&
                    texture.width == expectedWidth &&
                    texture.height == expectedHeight &&
+                   texture.graphicsFormat == expectedFormat &&
                    texture.isReadable;
         }
 
