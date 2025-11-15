@@ -17,6 +17,9 @@ namespace CustomToneMapping.Baker
     [BurstCompile]
     public static class LutBaker
     {
+        public const int MinLutSize = 32;
+        public const int MaxLutSize = 65;
+
         private static readonly ProfilerMarker BakeLutMarker = new("CustomToneMapping.BakeLUT");
 
         public static int GetLutWidth(int lutSize) => lutSize * lutSize;
@@ -57,6 +60,12 @@ namespace CustomToneMapping.Baker
         internal static void BakeStripLut<T>(T toneMap, bool isHdrOutput, int lutSize, ref Texture2D texture)
             where T : struct, IToneMap
         {
+            if (lutSize < MinLutSize || lutSize > MaxLutSize)
+            {
+                throw new ArgumentOutOfRangeException(nameof(lutSize),
+                    $"LUT size must be between {MinLutSize} and {MaxLutSize}");
+            }
+
             using (BakeLutMarker.Auto())
             {
                 var h = GetLutHeight(lutSize);
