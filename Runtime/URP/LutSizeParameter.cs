@@ -1,4 +1,5 @@
 using System;
+using CustomToneMapping.Baker;
 using UnityEngine.Rendering;
 
 namespace CustomToneMapping.URP
@@ -6,8 +7,8 @@ namespace CustomToneMapping.URP
     [Serializable]
     public sealed class LutSizeParameter : VolumeParameter<int>
     {
-        public const int MinLutSize = 32;
-        public const int MaxLutSize = 65;
+        public const int MinLutSize = LutBaker.MinLutSize;
+        public const int MaxLutSize = LutBaker.MaxLutSize;
 
         public LutSizeParameter(int value, bool overrideState = false)
             : base(UnityEngine.Mathf.Clamp(value, MinLutSize, MaxLutSize), overrideState)
