@@ -59,11 +59,11 @@ namespace CustomToneMapping.Baker
         {
             using (BakeLutMarker.Auto())
             {
-                int h = GetLutHeight(lutSize);
-                int w = GetLutWidth(lutSize);
+                var h = GetLutHeight(lutSize);
+                var w = GetLutWidth(lutSize);
 
                 // Determine the format to use
-                GraphicsFormat format = ChooseFormat();
+                var format = ChooseFormat();
 
                 if (!IsTextureReusable(texture, w, h, format))
                 {
@@ -84,7 +84,7 @@ namespace CustomToneMapping.Baker
                     };
                 }
 
-                int pixelCount = w * h;
+                var pixelCount = w * h;
                 using var pixels =
                     new NativeArray<half4>(pixelCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
 
@@ -117,7 +117,7 @@ namespace CustomToneMapping.Baker
             }
 
             // For other formats, convert the pixel data
-            int pixelCount = sourcePixels.Length;
+            var pixelCount = sourcePixels.Length;
 
             switch (format)
             {
@@ -127,7 +127,7 @@ namespace CustomToneMapping.Baker
                         NativeArrayOptions.UninitializedMemory);
                     try
                     {
-                        for (int i = 0; i < pixelCount; i++)
+                        for (var i = 0; i < pixelCount; i++)
                         {
                             converted[i] = new float4(sourcePixels[i]);
                         }
@@ -148,14 +148,14 @@ namespace CustomToneMapping.Baker
                         NativeArrayOptions.UninitializedMemory);
                     try
                     {
-                        for (int i = 0; i < pixelCount; i++)
+                        for (var i = 0; i < pixelCount; i++)
                         {
-                            half4 pixel = sourcePixels[i];
-                            int baseIdx = i * 4;
-                            converted[baseIdx + 0] = (byte)math.clamp((float)pixel.x * 255f + 0.5f, 0, 255);
-                            converted[baseIdx + 1] = (byte)math.clamp((float)pixel.y * 255f + 0.5f, 0, 255);
-                            converted[baseIdx + 2] = (byte)math.clamp((float)pixel.z * 255f + 0.5f, 0, 255);
-                            converted[baseIdx + 3] = (byte)math.clamp((float)pixel.w * 255f + 0.5f, 0, 255);
+                            var pixel = sourcePixels[i];
+                            var baseIdx = i * 4;
+                            converted[baseIdx + 0] = (byte)math.clamp(pixel.x * 255f + 0.5f, 0, 255);
+                            converted[baseIdx + 1] = (byte)math.clamp(pixel.y * 255f + 0.5f, 0, 255);
+                            converted[baseIdx + 2] = (byte)math.clamp(pixel.z * 255f + 0.5f, 0, 255);
+                            converted[baseIdx + 3] = (byte)math.clamp(pixel.w * 255f + 0.5f, 0, 255);
                         }
 
                         texture.SetPixelData(converted, 0);

@@ -19,8 +19,8 @@ namespace CustomToneMapping.URP
 
         private static Vector3 GetLutParams(int lutSize)
         {
-            int lutWidth = LutBaker.GetLutWidth(lutSize);
-            int lutHeight = LutBaker.GetLutHeight(lutSize);
+            var lutWidth = LutBaker.GetLutWidth(lutSize);
+            var lutHeight = LutBaker.GetLutHeight(lutSize);
             return new Vector3(
                 1.0f / lutWidth,
                 1.0f / lutHeight,
@@ -120,7 +120,7 @@ namespace CustomToneMapping.URP
                 return false;
             }
 
-            int lutSize = (int)customMode.lutSize.value;
+            var lutSize = customMode.lutSize.value;
             Texture2D lut;
             switch (customMode.mode.value)
             {

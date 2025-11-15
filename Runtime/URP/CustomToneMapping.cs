@@ -8,7 +8,7 @@ namespace CustomToneMapping.URP
     public sealed class CustomToneMapping : VolumeComponent
     {
         public ToneMappingModeParameter mode = new(ToneMappingMode.None);
-        public LutSizeParameter lutSize = new(LutSize.Size32);
+        public LutSizeParameter lutSize = new(32);
 
         [HideInInspector] public TextureParameter lutTexture = new(null);
     }
