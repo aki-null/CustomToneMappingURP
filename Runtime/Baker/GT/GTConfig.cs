@@ -31,7 +31,7 @@ namespace CustomToneMapping.Baker.GT
                 h = HashUtil.Hash32(h, LinearSectionLength);
                 h = HashUtil.Hash32(h, BlackTightness);
                 h = HashUtil.Hash32(h, BlackOffset);
-                h = HashUtil.Hash32(h, (uint)LutSize);
+                h = HashUtil.Hash32(h, LutSize);
                 return h;
             }
         }

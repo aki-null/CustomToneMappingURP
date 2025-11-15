@@ -25,7 +25,7 @@ namespace CustomToneMapping.Baker.AgX
                 h = HashUtil.Hash32(h, UseP3Limit ? 1u : 0u);
                 h = HashUtil.Hash32(h, (int)LookConfig.LookPreset);
                 h = HashUtil.Hash32(h, LookConfig.Intensity);
-                h = HashUtil.Hash32(h, (uint)LutSize);
+                h = HashUtil.Hash32(h, LutSize);
                 return h;
             }
         }
