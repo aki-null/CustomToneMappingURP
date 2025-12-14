@@ -42,9 +42,34 @@ Since adding new tone mapping functions to URP is not officially supported throu
 
 ## Installation
 
-1. Click `Window > Package Manager` to open the Package Manager UI
-2. Click `+ > Add package from git URL...` and input the repository URL: https://github.com/aki-null/CustomToneMappingURP.git
-3. Follow the [Integration Guide](#integration-guide)
+Install via OpenUPM:
+
+- Package is available on [OpenUPM](https://openupm.com). If you have [openupm-cli](https://github.com/openupm/openupm-cli#openupm-cli) installed, run this in your Unity project root:
+    ```
+    openupm add net.aki-null.tonemapping
+    ```
+- To update, specify the version you want:
+    ```
+    openupm add net.aki-null.tonemapping@1.1.0
+    ```
+
+Install via UPM (Git URL):
+
+1. Open **Window > Package Manager**
+2. Click the **+** button in the top-left corner
+3. Select **Add package from git URL**
+4. Enter: `https://github.com/aki-null/CustomToneMappingURP.git`
+5. Follow the [Integration Guide](#integration-guide)
+
+Alternatively, add it to your `Packages/manifest.json`:
+
+```json
+{
+    "dependencies": {
+        "net.aki-null.tonemapping": "https://github.com/aki-null/CustomToneMappingURP.git"
+    }
+}
+```
 
 ## Usage
 
