@@ -2,7 +2,7 @@
 
 This package extends URP by adding custom tone mapping algorithms, providing more options for different visual requirements and workflows.
 
-<img width="1920" height="1080" alt="GT7 Tone Mapping Sample" src="https://github.com/user-attachments/assets/541952bf-26a4-4047-9861-84e66020fd58" />
+![GT7 Tone Mapping Sample](https://github.com/user-attachments/assets/541952bf-26a4-4047-9861-84e66020fd58)
 
 _GT7 Tone Mapping Sample_
 
