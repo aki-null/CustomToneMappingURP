@@ -2,7 +2,7 @@
 
 This package extends URP by adding custom tone mapping algorithms, providing more options for different visual requirements and workflows.
 
-![GT7 Tone Mapping Sample](https://github.com/user-attachments/assets/541952bf-26a4-4047-9861-84e66020fd58)
+<img width="1920" alt="GT7 Tone Mapping Sample" src="https://github.com/user-attachments/assets/541952bf-26a4-4047-9861-84e66020fd58" />
 
 _GT7 Tone Mapping Sample_
 
@@ -94,19 +94,19 @@ During rendering, URP's post-processing pipeline samples from this pre-computed 
 
 Designed by Polyphony Digital for Gran Turismo Sport. Initially presented at [CEDEC 2017](https://www.slideshare.net/nikuque/hdr-theory-and-practicce-jp) and later at [SIGGRAPH Asia 2018](http://cdn2.gran-turismo.com/data/www/pdi_publications/PracticalHDRandWCGinGTS_20181222.pdf).
 
-<img width="510" height="517" alt="GT Tone Mapping Inspector" src="https://github.com/user-attachments/assets/41589490-174f-4407-9f16-7510de103c00" />
+<img width="510" alt="GT Tone Mapping Inspector" src="https://github.com/user-attachments/assets/41589490-174f-4407-9f16-7510de103c00" />
 
 ### GT7 Tone Mapping
 
 Designed by Polyphony Digital for Gran Turismo 7. Presented at [SIGGRAPH 2025](https://blog.selfshadow.com/publications/s2025-shading-course/).
 
-<img width="510" height="611" alt="GT7 Tone Mapping Inspector" src="https://github.com/user-attachments/assets/0fbc18b5-260d-4286-a280-54a08db6b0fc" />
+<img width="510" alt="GT7 Tone Mapping Inspector" src="https://github.com/user-attachments/assets/0fbc18b5-260d-4286-a280-54a08db6b0fc" />
 
 ### AgX
 
 Designed by [Troy Sobotka](https://github.com/sobotka). The LUT generation is based on [Eary Chow's version](https://github.com/EaryChow/AgX_LUT_Gen).
 
-<img width="510" height="293" alt="AgX Tone Mapping Inspector" src="https://github.com/user-attachments/assets/b80e555b-f1e7-4536-9dac-6138ae04e201" />
+<img width="510" alt="AgX Tone Mapping Inspector" src="https://github.com/user-attachments/assets/b80e555b-f1e7-4536-9dac-6138ae04e201" />
 
 ### Custom LUT
 
