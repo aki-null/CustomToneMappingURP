@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1 - 2026-03-19
+
+### Fixed
+- Compilation error on URP 17.5+ where legacy rendering pipeline methods were removed from ScriptableRenderPass
+
 ## 1.2.0 - 2026-02-02
 
 ### Added

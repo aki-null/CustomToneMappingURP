@@ -1,5 +1,7 @@
 using System;
+#if !URP_17_5_OR_NEWER
 using System.Reflection;
+#endif
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
@@ -110,6 +112,7 @@ namespace CustomToneMapping.URP.RendererFeatures
 
         #endregion
 
+#if !URP_17_5_OR_NEWER
         #region Non-Render Graph Path (Legacy)
 
         // Reflection cache
@@ -229,12 +232,15 @@ namespace CustomToneMapping.URP.RendererFeatures
         }
 
         #endregion
+#endif
 
         public void Dispose()
         {
             CoreUtils.Destroy(_material);
+#if !URP_17_5_OR_NEWER
             _tempLutHandle?.Release();
             _tempLutHandle = null;
+#endif
         }
     }
 }

@@ -13,6 +13,12 @@
   "precompiledReferences": [],
   "autoReferenced": true,
   "defineConstraints": [],
-  "versionDefines": [],
+  "versionDefines": [
+    {
+      "name": "com.unity.render-pipelines.universal",
+      "expression": "17.5.0",
+      "define": "URP_17_5_OR_NEWER"
+    }
+  ],
   "noEngineReferences": false
 }
