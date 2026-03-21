@@ -115,6 +115,35 @@ namespace CustomToneMapping.Baker
             }
         }
 
+        [BurstCompile]
+        private struct ConvertToFloat4Job : IJobParallelFor
+        {
+            [ReadOnly] public NativeArray<half4> Input;
+            [WriteOnly] public NativeArray<float4> Output;
+
+            public void Execute(int index)
+            {
+                Output[index] = new float4(Input[index]);
+            }
+        }
+
+        [BurstCompile]
+        private struct ConvertToUnormJob : IJobParallelFor
+        {
+            [ReadOnly] public NativeArray<half4> Input;
+            [WriteOnly] public NativeArray<uint> Output;
+
+            public void Execute(int index)
+            {
+                var p = Input[index];
+                var r = (uint)math.clamp(p.x * 255f + 0.5f, 0f, 255f);
+                var g = (uint)math.clamp(p.y * 255f + 0.5f, 0f, 255f);
+                var b = (uint)math.clamp(p.z * 255f + 0.5f, 0f, 255f);
+                var a = (uint)math.clamp(p.w * 255f + 0.5f, 0f, 255f);
+                Output[index] = r | (g << 8) | (b << 16) | (a << 24);
+            }
+        }
+
         private static void SetPixelDataWithConversion(Texture2D texture, NativeArray<half4> sourcePixels,
             GraphicsFormat format)
         {
@@ -125,58 +154,28 @@ namespace CustomToneMapping.Baker
                 return;
             }
 
-            // For other formats, convert the pixel data
             var pixelCount = sourcePixels.Length;
 
             switch (format)
             {
                 case GraphicsFormat.R32G32B32A32_SFloat:
                 {
-                    var converted = new NativeArray<float4>(pixelCount, Allocator.Temp,
+                    using var converted = new NativeArray<float4>(pixelCount, Allocator.TempJob,
                         NativeArrayOptions.UninitializedMemory);
-                    try
-                    {
-                        for (var i = 0; i < pixelCount; i++)
-                        {
-                            converted[i] = new float4(sourcePixels[i]);
-                        }
-
-                        texture.SetPixelData(converted, 0);
-                    }
-                    finally
-                    {
-                        converted.Dispose();
-                    }
-
+                    new ConvertToFloat4Job { Input = sourcePixels, Output = converted }
+                        .Schedule(pixelCount, 64).Complete();
+                    texture.SetPixelData(converted, 0);
                     break;
                 }
-
                 case GraphicsFormat.R8G8B8A8_UNorm:
                 {
-                    var converted = new NativeArray<byte>(pixelCount * 4, Allocator.Temp,
+                    using var converted = new NativeArray<uint>(pixelCount, Allocator.TempJob,
                         NativeArrayOptions.UninitializedMemory);
-                    try
-                    {
-                        for (var i = 0; i < pixelCount; i++)
-                        {
-                            var pixel = sourcePixels[i];
-                            var baseIdx = i * 4;
-                            converted[baseIdx + 0] = (byte)math.clamp(pixel.x * 255f + 0.5f, 0, 255);
-                            converted[baseIdx + 1] = (byte)math.clamp(pixel.y * 255f + 0.5f, 0, 255);
-                            converted[baseIdx + 2] = (byte)math.clamp(pixel.z * 255f + 0.5f, 0, 255);
-                            converted[baseIdx + 3] = (byte)math.clamp(pixel.w * 255f + 0.5f, 0, 255);
-                        }
-
-                        texture.SetPixelData(converted, 0);
-                    }
-                    finally
-                    {
-                        converted.Dispose();
-                    }
-
+                    new ConvertToUnormJob { Input = sourcePixels, Output = converted }
+                        .Schedule(pixelCount, 64).Complete();
+                    texture.SetPixelData(converted, 0);
                     break;
                 }
-
                 default:
                     throw new NotSupportedException($"Texture format {format} is not supported for LUT baking");
             }
