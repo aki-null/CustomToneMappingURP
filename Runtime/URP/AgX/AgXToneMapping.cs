@@ -5,9 +5,19 @@ using UnityEngine.Rendering;
 
 namespace CustomToneMapping.URP
 {
+#if UNITY_6000_3_OR_NEWER
+    [DisplayInfo(name = "AgX Tone Mapping")]
+#endif
     [Serializable, VolumeComponentMenu("Post-processing/AgX Tone Mapping")]
     public sealed class AgXToneMapping : VolumeComponent
     {
+#if !UNITY_6000_3_OR_NEWER
+        private AgXToneMapping()
+        {
+            displayName = "AgX Tone Mapping";
+        }
+#endif
+
         [Tooltip("Automatically detect display peak luminance for HDR.")]
         public BoolParameter detectBrightnessLimits = new(true);
 
@@ -30,11 +40,6 @@ namespace CustomToneMapping.URP
 
         [Tooltip("Apply P3 gamut limiting.")] [InspectorName("Limit to DCI-P3")]
         public BoolParameter useP3Limit = new(false);
-
-        private AgXToneMapping()
-        {
-            displayName = "AgX Tone Mapping";
-        }
 
         public AgXConfig ToConfig(float peakNits, bool isHdrOutput, int lutSize)
         {
