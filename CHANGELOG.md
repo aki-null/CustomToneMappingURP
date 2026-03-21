@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.2 - 2026-03-21
+
+### Added
+- LRU cache to prevent redundant LUT re-baking when multiple cameras use different tone mapping configurations
+
+### Changed
+- Optimized fallback texture format conversion
+
+### Fixed
+- `displayName` deprecation warning
+
 ## 1.2.1 - 2026-03-19
 
 ### Fixed
