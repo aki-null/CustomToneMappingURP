@@ -7,15 +7,26 @@ namespace CustomToneMapping.URP
 {
     public static class UrpBridge
     {
-        private static uint _lastKey;
-        private static Texture2D _lutTexture;
+        private const int MaxCacheEntries = 4;
+
+        private struct CacheEntry
+        {
+            public uint Key;
+            public Texture2D Texture;
+            public int LastUsedFrame;
+        }
+
+        private static readonly CacheEntry[] Cache = new CacheEntry[MaxCacheEntries];
+        private static int _cacheCount;
+        private static int _lastUsedSlot;
 
         private const string TonemapCustomKeyword = "_TONEMAP_CUSTOM";
         private static readonly int CustomTonemapLut = Shader.PropertyToID("_CustomTonemapLut");
         private static readonly int CustomTonemapParams = Shader.PropertyToID("_CustomTonemap_Params");
 
         // Public getter for cached LUT (used by editor tools)
-        public static Texture2D CachedLutTexture => _lutTexture;
+        public static Texture2D CachedLutTexture =>
+            _cacheCount > 0 && _lastUsedSlot < _cacheCount ? Cache[_lastUsedSlot].Texture : null;
 
         private static Vector3 GetLutParams(int lutSize)
         {
@@ -32,24 +43,77 @@ namespace CustomToneMapping.URP
         {
             tex = null;
             lutParamsSample = GetLutParams(config.LutSize);
-
             var key = config.ConfigHash;
+            var frame = Time.frameCount;
 
-            var needRebake = _lutTexture == null || !key.Equals(_lastKey);
-            if (needRebake)
+            // Search existing entries for a cache hit
+            for (var i = 0; i < _cacheCount; i++)
             {
-                LutBaker.BakeStripLut(config, ref _lutTexture);
-
-                if (_lutTexture != null)
+                if (Cache[i].Key == key && Cache[i].Texture != null)
                 {
-                    _lutTexture.name = "ToneMappingLUT";
-                    _lutTexture.hideFlags = HideFlags.HideAndDontSave;
+                    Cache[i].LastUsedFrame = frame;
+                    _lastUsedSlot = i;
+                    tex = Cache[i].Texture;
+                    return true;
                 }
-
-                _lastKey = key;
             }
 
-            tex = _lutTexture;
+            // Cache miss — find a slot to bake into
+            int slot;
+            if (_cacheCount < MaxCacheEntries)
+            {
+                // Free slot available
+                slot = _cacheCount++;
+            }
+            else
+            {
+                // Prefer slots with destroyed textures (Unity may have cleaned them up)
+                slot = -1;
+                for (var i = 0; i < _cacheCount; i++)
+                {
+                    if (Cache[i].Texture == null)
+                    {
+                        slot = i;
+                        break;
+                    }
+                }
+
+                // Otherwise evict LRU
+                if (slot < 0)
+                {
+                    slot = 0;
+                    var oldest = Cache[0].LastUsedFrame;
+                    for (var i = 1; i < MaxCacheEntries; i++)
+                    {
+                        if (Cache[i].LastUsedFrame < oldest)
+                        {
+                            oldest = Cache[i].LastUsedFrame;
+                            slot = i;
+                        }
+                    }
+                }
+            }
+
+            // Bake into slot. BakeStripLut reuses the texture if dimensions/format
+            // match, or calls CoreUtils.Destroy + recreates if they don't.
+            var texture = Cache[slot].Texture;
+            LutBaker.BakeStripLut(config, ref texture);
+
+            if (texture != null)
+            {
+                texture.name = "ToneMappingLUT";
+                texture.hideFlags = HideFlags.HideAndDontSave;
+            }
+
+            Cache[slot] = new CacheEntry
+            {
+                Key = key,
+                Texture = texture,
+                LastUsedFrame = frame
+            };
+
+            _lastUsedSlot = slot;
+            tex = texture;
             return tex != null;
         }
 
