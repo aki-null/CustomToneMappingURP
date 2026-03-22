@@ -14,6 +14,7 @@ Since adding new tone mapping functions to URP is not officially supported throu
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Technical Details](#technical-details)
+  - [Tone Mapping Pipeline Ordering](#tone-mapping-pipeline-ordering)
 - [Usage](#usage)
 - [Modes](#modes)
   - [GT Tone Mapping](#gt-tone-mapping)
@@ -86,7 +87,17 @@ Rather than performing tone mapping calculations directly on the GPU during rend
 
 The workflow operates as follows: Volume components supply tone mapping parameters, which the system uses to generate a 3D LUT. This LUT is stored as a 2D texture strip and uploaded to the GPU. The LUT is regenerated automatically when parameters change.
 
-During rendering, URP's post-processing pipeline samples from this pre-computed LUT to apply the tone mapping.
+During rendering, this pre-computed LUT is integrated into URP's color grading stage to apply the tone mapping.
+
+### Tone Mapping Pipeline Ordering
+
+For correct results, tone mapping must be applied after bloom composition. In URP, the UberPost shader composites bloom and applies color grading within a single fragment shader — there is no injection point between the two operations.
+
+Tone mapping in URP is part of the color grading stage. In HDR grading mode, both color grading and tone mapping are baked together into the color grading LUT during generation. In LDR grading mode, tone mapping is applied within the color grading function before the color grading LUT is sampled. Either way, tone mapping occurs after bloom composition inside the UberPost pass.
+
+Applying tone mapping as a separate render pass cannot achieve this ordering. A pass before UberPost would tonemap the scene before bloom is composited, causing bloom to add un-tonemapped values onto an already tonemapped image. A pass after UberPost would separate tone mapping from color grading. In LDR grading mode, this reverses the intended order since URP normally tonemaps before applying the color grading LUT. In HDR grading mode, the operation order is preserved, but film grain, dithering, and gamma conversion — which run after color grading within UberPost — would process un-tonemapped values outside their expected range.
+
+Both integration methods in this package solve this by integrating custom tone mapping into URP's color grading stage. The renderer feature method intercepts URP's internal color grading LUT after generation and applies custom tone mapping to it. The URP modification method hooks into the LUT builder shader and the color grading function. In both cases, tone mapping is applied at the correct point in the pipeline — after bloom composition, within the color grading stage.
 
 ## Modes
 
