@@ -14,7 +14,7 @@ Since adding new tone mapping functions to URP is not officially supported throu
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Technical Details](#technical-details)
-  - [Tone Mapping Pipeline Ordering](#tone-mapping-pipeline-ordering)
+  - [Pipeline Ordering](#pipeline-ordering)
 - [Usage](#usage)
 - [Modes](#modes)
   - [GT Tone Mapping](#gt-tone-mapping)
@@ -89,7 +89,7 @@ The workflow operates as follows: Volume components supply tone mapping paramete
 
 During rendering, this pre-computed LUT is integrated into URP's color grading stage to apply the tone mapping.
 
-### Tone Mapping Pipeline Ordering
+### Pipeline Ordering
 
 For correct results, tone mapping must be applied after bloom composition. In URP, the UberPost shader composites bloom and applies color grading within a single fragment shader — there is no injection point between the two operations.
 
