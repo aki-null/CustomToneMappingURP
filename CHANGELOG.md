@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.3 - 2026-03-24
+
+### Fixed
+- Postprocess material setup clearing all shader keywords, which could disable bloom and other post-processing effects
+
 ## 1.2.2 - 2026-03-21
 
 ### Added

@@ -242,7 +242,6 @@ namespace CustomToneMapping.URP
 
         private static void SetupMaterial(Material material, Texture2D lut, Vector3 sample)
         {
-            material.shaderKeywords = null;
             material.EnableKeyword(TonemapCustomKeyword);
             material.SetTexture(CustomTonemapLut, lut);
             material.SetVector(CustomTonemapParams, sample);
