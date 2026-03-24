@@ -78,6 +78,10 @@ namespace CustomToneMapping.URP.RendererFeatures
             // Disable non-RG compatibility
             _material.DisableKeyword(LegacyRenderPathKeyword);
 
+            // This material persists across frames and is not reset externally, so we must
+            // disable HDR keywords before conditionally re-enabling them in ConfigureHDROutput.
+            // Otherwise they remain stale from a previous frame where HDR output was active.
+            _material.DisableKeyword(HDROutputUtils.ShaderKeywords.HDR_COLORSPACE_CONVERSION);
             ConfigureHDROutput(cameraData);
 
             var lutDesc = renderGraph.GetTextureDesc(resourceData.internalColorLut);
@@ -203,6 +207,10 @@ namespace CustomToneMapping.URP.RendererFeatures
                 // Enable non-RG compatibility
                 _material.EnableKeyword(LegacyRenderPathKeyword);
 
+                // This material persists across frames and is not reset externally, so we must
+                // disable HDR keywords before conditionally re-enabling them in ConfigureHDROutputLegacy.
+                // Otherwise they remain stale from a previous frame where HDR output was active.
+                _material.DisableKeyword(HDROutputUtils.ShaderKeywords.HDR_COLORSPACE_CONVERSION);
                 ConfigureHDROutputLegacy(cameraData);
 
                 // Apply tone mapping
