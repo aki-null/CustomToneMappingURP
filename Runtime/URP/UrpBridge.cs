@@ -39,7 +39,7 @@ namespace CustomToneMapping.URP
             );
         }
 
-        private static bool TryGetOrBakeLut(ILutConfig config, out Texture2D tex, out Vector3 lutParamsSample)
+        private static bool TryGetOrBakeLut<T>(T config, out Texture2D tex, out Vector3 lutParamsSample) where T : ILutConfig
         {
             tex = null;
             lutParamsSample = GetLutParams(config.LutSize);
