@@ -26,7 +26,8 @@ namespace CustomToneMapping.URP
         [Tooltip("Target peak luminance in nits for HDR tonemapping.")]
         public ClampedFloatParameter targetPeakNits = new(1000.0f, 100.0f, 10000.0f);
 
-        [Tooltip("SDR paper white (nits). Only used if integrating SDR path.")] [InspectorName("SDR Paper White")]
+        [Tooltip("SDR paper white (nits). Only used if integrating SDR path.")]
+        [InspectorName("SDR Paper White")]
         public ClampedFloatParameter sdrPaperWhite = new(DefaultSdrPaperWhite, 50.0f, 1000.0f);
 
         [Tooltip("1.0 linear in frame-buffer corresponds to this reference luminance (nits).")]

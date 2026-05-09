@@ -189,49 +189,49 @@ namespace CustomToneMapping.URP
             switch (customMode.mode.value)
             {
                 case ToneMappingMode.GT:
-                {
-                    var gt = VolumeManager.instance.stack.GetComponent<GTToneMapping>();
-                    if (TryGetOrBakeLut(gt, hdrDisplayInfo, lutSize, out lut, out var sample))
                     {
-                        SetupMaterial(material, lut, sample);
-                    }
+                        var gt = VolumeManager.instance.stack.GetComponent<GTToneMapping>();
+                        if (TryGetOrBakeLut(gt, hdrDisplayInfo, lutSize, out lut, out var sample))
+                        {
+                            SetupMaterial(material, lut, sample);
+                        }
 
-                    break;
-                }
+                        break;
+                    }
                 case ToneMappingMode.GT7:
-                {
-                    var gt7 = VolumeManager.instance.stack.GetComponent<GT7ToneMapping>();
-                    if (TryGetOrBakeLut(gt7, hdrDisplayInfo, lutSize, out lut, out var sample))
                     {
-                        SetupMaterial(material, lut, sample);
-                    }
+                        var gt7 = VolumeManager.instance.stack.GetComponent<GT7ToneMapping>();
+                        if (TryGetOrBakeLut(gt7, hdrDisplayInfo, lutSize, out lut, out var sample))
+                        {
+                            SetupMaterial(material, lut, sample);
+                        }
 
-                    break;
-                }
+                        break;
+                    }
                 case ToneMappingMode.AgX:
-                {
-                    var agx = VolumeManager.instance.stack.GetComponent<AgXToneMapping>();
-                    if (TryGetOrBakeLut(agx, hdrDisplayInfo, lutSize, out lut, out var sample))
                     {
-                        SetupMaterial(material, lut, sample);
-                    }
+                        var agx = VolumeManager.instance.stack.GetComponent<AgXToneMapping>();
+                        if (TryGetOrBakeLut(agx, hdrDisplayInfo, lutSize, out lut, out var sample))
+                        {
+                            SetupMaterial(material, lut, sample);
+                        }
 
-                    break;
-                }
+                        break;
+                    }
                 case ToneMappingMode.CustomLUT:
-                {
-                    lut = customMode.lutTexture.value as Texture2D;
-                    if (lut != null)
                     {
-                        SetupMaterial(material, lut, new Vector3(1.0f / lut.width, 1.0f / lut.height, lut.height - 1));
-                    }
-                    else
-                    {
-                        return false;
-                    }
+                        lut = customMode.lutTexture.value as Texture2D;
+                        if (lut != null)
+                        {
+                            SetupMaterial(material, lut, new Vector3(1.0f / lut.width, 1.0f / lut.height, lut.height - 1));
+                        }
+                        else
+                        {
+                            return false;
+                        }
 
-                    break;
-                }
+                        break;
+                    }
                 default:
                     throw new System.ArgumentOutOfRangeException(nameof(customMode.mode.value), customMode.mode.value,
                         null);

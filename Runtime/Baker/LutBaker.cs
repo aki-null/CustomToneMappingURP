@@ -159,23 +159,23 @@ namespace CustomToneMapping.Baker
             switch (format)
             {
                 case GraphicsFormat.R32G32B32A32_SFloat:
-                {
-                    using var converted = new NativeArray<float4>(pixelCount, Allocator.TempJob,
-                        NativeArrayOptions.UninitializedMemory);
-                    new ConvertToFloat4Job { Input = sourcePixels, Output = converted }
-                        .Schedule(pixelCount, 64).Complete();
-                    texture.SetPixelData(converted, 0);
-                    break;
-                }
+                    {
+                        using var converted = new NativeArray<float4>(pixelCount, Allocator.TempJob,
+                            NativeArrayOptions.UninitializedMemory);
+                        new ConvertToFloat4Job { Input = sourcePixels, Output = converted }
+                            .Schedule(pixelCount, 64).Complete();
+                        texture.SetPixelData(converted, 0);
+                        break;
+                    }
                 case GraphicsFormat.R8G8B8A8_UNorm:
-                {
-                    using var converted = new NativeArray<uint>(pixelCount, Allocator.TempJob,
-                        NativeArrayOptions.UninitializedMemory);
-                    new ConvertToUnormJob { Input = sourcePixels, Output = converted }
-                        .Schedule(pixelCount, 64).Complete();
-                    texture.SetPixelData(converted, 0);
-                    break;
-                }
+                    {
+                        using var converted = new NativeArray<uint>(pixelCount, Allocator.TempJob,
+                            NativeArrayOptions.UninitializedMemory);
+                        new ConvertToUnormJob { Input = sourcePixels, Output = converted }
+                            .Schedule(pixelCount, 64).Complete();
+                        texture.SetPixelData(converted, 0);
+                        break;
+                    }
                 default:
                     throw new NotSupportedException($"Texture format {format} is not supported for LUT baking");
             }
