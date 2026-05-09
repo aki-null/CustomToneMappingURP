@@ -61,7 +61,7 @@ namespace CustomToneMapping.URP.RendererFeatures
             if (!resourceData.internalColorLut.IsValid()) return;
 
             // Prevent double tonemapping
-            if (VolumeManager.instance.stack.GetComponent<Tonemapping>().mode != TonemappingMode.None)
+            if (VolumeManager.instance.stack.GetComponent<Tonemapping>().mode.value != TonemappingMode.None)
             {
                 return;
             }

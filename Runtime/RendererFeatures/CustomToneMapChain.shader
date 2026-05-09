@@ -66,7 +66,7 @@ Shader "Hidden/CustomToneMapChain"
             #pragma fragment Frag
 
             #if !defined(LEGACY_RENDER_PATH)
-            FRAMEBUFFER_INPUT_X_HALF(0);
+            FRAMEBUFFER_INPUT_HALF(0);
             #endif
 
             float3 ToneMap(float3 color)
@@ -94,7 +94,7 @@ Shader "Hidden/CustomToneMapChain"
                 color = LOAD_TEXTURE2D(_MainTex, input.positionCS.xy).rgb;
                 #else
                 // RenderGraph path: Use framebuffer fetch
-                color = LOAD_FRAMEBUFFER_X_INPUT(0, input.positionCS.xy).rgb;
+                color = LOAD_FRAMEBUFFER_INPUT(0, input.positionCS.xy).rgb;
                 #endif
 
                 return float4(ToneMap(color), 1.0);
