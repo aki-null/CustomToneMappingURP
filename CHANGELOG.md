@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.4 - 2026-05-09
+
+### Fixed
+- Compatibility with VR Single Pass Instanced rendering
+- Per-frame GC allocations
+
 ## 1.2.3 - 2026-03-24
 
 ### Fixed
