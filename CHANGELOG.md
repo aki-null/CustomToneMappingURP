@@ -3,8 +3,8 @@
 ## 1.2.4 - 2026-05-09
 
 ### Fixed
-- Compatibility with VR Single Pass Instanced rendering
-- Per-frame GC allocations
+- Compatibility with VR Single Pass Instanced rendering by [@sambazzano](https://github.com/sambazzano) in [#5](https://github.com/aki-null/CustomToneMappingURP/pull/5)
+- Per-frame GC allocations by [@sambazzano](https://github.com/sambazzano) in [#5](https://github.com/aki-null/CustomToneMappingURP/pull/5)
 
 ## 1.2.3 - 2026-03-24
 
