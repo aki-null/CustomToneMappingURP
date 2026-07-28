@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- Optimized the Renderer Feature's Render Graph integration by handing the tone-mapped LUT directly to downstream post-processing, eliminating the copy-back pass and allowing URP's original grading LUT to remain memoryless when framebuffer fetch pass merging is available
+
 ## 1.2.4 - 2026-05-09
 
 ### Fixed
