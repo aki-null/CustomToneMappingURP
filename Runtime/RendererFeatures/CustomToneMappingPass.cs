@@ -85,9 +85,9 @@ namespace CustomToneMapping.URP.RendererFeatures
             ConfigureHDROutput(cameraData);
 
             var lutDesc = renderGraph.GetTextureDesc(resourceData.internalColorLut);
-            lutDesc.name = "CustomToneMapTemp";
+            lutDesc.name = "CustomToneMappedLut";
             lutDesc.clearBuffer = false;
-            var tempLut = renderGraph.CreateTexture(lutDesc);
+            var toneMappedLut = renderGraph.CreateTexture(lutDesc);
 
             using (var builder =
                    renderGraph.AddRasterRenderPass<ToneMapPassData>("Apply Tone Map", out var passData))
@@ -95,7 +95,7 @@ namespace CustomToneMapping.URP.RendererFeatures
                 passData.Material = _material;
 
                 builder.SetInputAttachment(resourceData.internalColorLut, 0);
-                builder.SetRenderAttachment(tempLut, 0);
+                builder.SetRenderAttachment(toneMappedLut, 0);
 
                 builder.SetRenderFunc((ToneMapPassData data, RasterGraphContext context) =>
                 {
@@ -103,7 +103,9 @@ namespace CustomToneMapping.URP.RendererFeatures
                 });
             }
 
-            renderGraph.AddCopyPass(tempLut, resourceData.internalColorLut, passName: "Copy Back LUT");
+            // Hand the transformed LUT to downstream post-processing instead of copying it
+            // back into URP's original LUT texture.
+            resourceData.internalColorLut = toneMappedLut;
         }
 
         private void ConfigureHDROutput(UniversalCameraData cameraData)
