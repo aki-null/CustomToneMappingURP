@@ -15,6 +15,7 @@ namespace CustomToneMapping.URP.RendererFeatures
 
         public override void Create()
         {
+            _pass?.Dispose();
             _pass = new CustomToneMappingPass(shader)
             {
                 renderPassEvent = RenderPassEvent.BeforeRenderingPrePasses + 1
@@ -26,7 +27,7 @@ namespace CustomToneMapping.URP.RendererFeatures
             if (!renderingData.cameraData.postProcessEnabled)
                 return;
 
-            var customToneMapping = VolumeManager.instance.stack.GetComponent<CustomToneMapping>();
+            var customToneMapping = VolumeManager.instance?.stack?.GetComponent<CustomToneMapping>();
             if (customToneMapping == null || customToneMapping.mode.value == ToneMappingMode.None)
                 return;
 
@@ -36,6 +37,7 @@ namespace CustomToneMapping.URP.RendererFeatures
         protected override void Dispose(bool disposing)
         {
             _pass?.Dispose();
+            _pass = null;
         }
     }
 }

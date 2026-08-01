@@ -41,11 +41,6 @@ namespace CustomToneMapping.URP.RendererFeatures
 
         #region Render Graph
 
-        private class CopyPassData
-        {
-            public TextureHandle SourceLut;
-        }
-
         private class ToneMapPassData
         {
             public Material Material;
@@ -61,7 +56,8 @@ namespace CustomToneMapping.URP.RendererFeatures
             if (!resourceData.internalColorLut.IsValid()) return;
 
             // Prevent double tonemapping
-            if (VolumeManager.instance.stack.GetComponent<Tonemapping>().mode.value != TonemappingMode.None)
+            var tonemapping = VolumeManager.instance?.stack?.GetComponent<Tonemapping>();
+            if (tonemapping != null && tonemapping.mode.value != TonemappingMode.None)
             {
                 return;
             }
@@ -69,8 +65,9 @@ namespace CustomToneMapping.URP.RendererFeatures
             var cameraData = frameData.Get<UniversalCameraData>();
 
             // Bind tone map LUT
-            if (!UrpBridge.PrepareMaterial(_material,
-                    cameraData.isHDROutputActive ? cameraData.hdrDisplayInformation : null))
+            if (UrpBridge.PrepareMaterialWithStatus(_material,
+                    cameraData.isHDROutputActive ? cameraData.hdrDisplayInformation : null) !=
+                MaterialPreparationStatus.Ready)
             {
                 return;
             }
@@ -119,6 +116,9 @@ namespace CustomToneMapping.URP.RendererFeatures
         #endregion
 
 #if !URP_17_5_OR_NEWER
+        // URP 17.5 removed the legacy ScriptableRenderPass callbacks used below.
+        // The compatibility path is therefore available through URP 17.4 only;
+        // URP 17.5+ projects must use URP's Render Graph mode.
         #region Non-Render Graph Path (Legacy)
 
         // Reflection cache
@@ -171,7 +171,6 @@ namespace CustomToneMapping.URP.RendererFeatures
             var colorGradingLut = GetColorGradingLut(renderingData.cameraData.renderer);
             if (colorGradingLut?.rt == null)
             {
-                Debug.LogWarning("Color grading LUT not found or not created.");
                 return;
             }
 
@@ -198,14 +197,17 @@ namespace CustomToneMapping.URP.RendererFeatures
             if (colorGradingLut?.rt == null || !colorGradingLut.rt.IsCreated()) return;
 
             var cameraData = renderingData.cameraData;
+            if (UrpBridge.PrepareMaterialWithStatus(_material,
+                    cameraData.isHDROutputActive ? cameraData.hdrDisplayInformation : null) !=
+                MaterialPreparationStatus.Ready)
+            {
+                return;
+            }
+
             var cmd = CommandBufferPool.Get("Custom Tone Mapping");
 
             using (new ProfilingScope(cmd, profilingSampler))
             {
-                // Setup material for tone mapping
-                UrpBridge.PrepareMaterial(_material,
-                    cameraData.isHDROutputActive ? cameraData.hdrDisplayInformation : null);
-
                 // Enable non-RG compatibility
                 _material.EnableKeyword(LegacyRenderPathKeyword);
 

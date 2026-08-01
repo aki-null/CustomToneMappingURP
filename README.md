@@ -12,6 +12,7 @@ Since adding new tone mapping functions to URP is not officially supported throu
 
 - [Features](#features)
 - [Prerequisites](#prerequisites)
+- [Compatibility and Performance](#compatibility-and-performance)
 - [Installation](#installation)
 - [Technical Details](#technical-details)
   - [Pipeline Ordering](#pipeline-ordering)
@@ -39,7 +40,13 @@ Since adding new tone mapping functions to URP is not officially supported throu
 ## Prerequisites
 
 * Unity 6 or later
-* Universal Render Pipeline
+* Universal Render Pipeline 17.0 or later
+
+## Compatibility and Performance
+
+The package declares URP 17.0 as its minimum dependency. URP 17.0–17.4 support both the compatibility path and Render Graph path. URP 17.5 and later removed the legacy `ScriptableRenderPass` callbacks, so those versions require URP's Render Graph mode for this feature. The native URP integration requires the matching URP source changes described below.
+
+Baked modes generate LUTs synchronously on first use or configuration change, then cache them by complete configuration.
 
 ## Installation
 
@@ -103,7 +110,9 @@ Designed by [Troy Sobotka](https://github.com/sobotka). The LUT generation is ba
 
 ### Custom LUT
 
-When Custom LUT is selected, assign a LUT texture (Alexa LogC El1000) in the Custom Tone Mapping component. Note that Custom LUT mode uses a static LUT and does not support variable peak brightness like the other modes.
+When Custom LUT is selected, assign a 2D Alexa LogC El1000 LUT strip in the Custom Tone Mapping component. For an `N`³ LUT, use an `N² × N` strip; the inspector can repair the import settings.
+
+Custom LUT mode uses a static LUT and does not support variable peak brightness like the baked modes.
 
 ## Integration Guide
 

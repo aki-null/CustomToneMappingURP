@@ -4,6 +4,9 @@
 
 ### Changed
 - Optimized the Renderer Feature's Render Graph integration by handing the tone-mapped LUT directly to downstream post-processing, eliminating the copy-back pass and allowing URP's original grading LUT to remain memoryless when framebuffer fetch pass merging is available
+- Improved built-in LUT caching to avoid unnecessary rebakes and preserve valid LUTs when configurations fail validation
+- Improved invalid-configuration handling and HDR LUT format safety
+- URP 17.5+ requires Render Graph mode; the compatibility path remains available for URP 17.0–17.4
 
 ## 1.2.4 - 2026-05-09
 
