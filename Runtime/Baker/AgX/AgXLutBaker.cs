@@ -1,3 +1,4 @@
+using System;
 using Unity.Burst;
 using UnityEngine;
 
@@ -15,6 +16,9 @@ namespace CustomToneMapping.Baker.AgX
 
         public static void BakeStripLut(AgXConfig settings, ref Texture2D texture)
         {
+            if (!settings.TryValidate(out var error))
+                throw new ArgumentException(error, nameof(settings));
+
             var mapper = new AgXToneMapping();
             mapper.Initialize(settings);
 

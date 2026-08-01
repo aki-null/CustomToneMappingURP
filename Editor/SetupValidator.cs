@@ -3,6 +3,7 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
+using CustomToneMapping.URP.RendererFeatures;
 
 namespace CustomToneMapping.URP.Editor
 {
@@ -60,6 +61,9 @@ namespace CustomToneMapping.URP.Editor
         internal static void DrawSetupValidation()
         {
             var setupStatus = GetSetupStatus();
+
+            if (setupStatus.CustomToneMappingMode == ToneMappingMode.None)
+                return;
 
             if (setupStatus.HasUrpModification)
             {
@@ -177,7 +181,7 @@ namespace CustomToneMapping.URP.Editor
                     // Check if our renderer feature is present in this renderer
                     if (universalRenderer.rendererFeatures != null &&
                         universalRenderer.rendererFeatures.Any(feature =>
-                            feature != null && feature.GetType().Name.Contains("CustomToneMapping")))
+                            feature is CustomToneMappingRendererFeature))
                     {
                         return true; // Found the feature in at least one renderer
                     }

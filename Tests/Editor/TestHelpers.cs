@@ -24,6 +24,8 @@ namespace CustomToneMapping.Tests
                 var exp = expected[i];
                 var act = actual[i];
 
+                if (!math.isfinite(exp) || !math.isfinite(act)) return false;
+
                 if (math.abs(exp) > absoluteThreshold)
                 {
                     // Use relative tolerance for values above threshold

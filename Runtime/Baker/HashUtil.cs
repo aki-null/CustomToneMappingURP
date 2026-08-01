@@ -25,6 +25,9 @@ namespace CustomToneMapping.Baker
         public static uint Hash32(uint seed, float value) => Hash32(seed, AsUInt(value));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool FloatBitsEqual(float left, float right) => AsUInt(left) == AsUInt(right);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static unsafe uint AsUInt(float f)
         {
             return *(uint*)&f;

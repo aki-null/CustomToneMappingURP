@@ -17,13 +17,35 @@ namespace CustomToneMapping.Baker
     [BurstCompile]
     public static class LutBaker
     {
-        public const int MinLutSize = 32;
-        public const int MaxLutSize = 65;
+        public const int MinLutSize = LutLayout.MinSize;
+        public const int MaxLutSize = LutLayout.MaxSize;
+
+        private const string HdrFormatError =
+            "HDR LUT baking requires a sampleable floating-point texture format.";
+        private const string SdrFormatError =
+            "LUT baking requires a sampleable texture format.";
 
         private static readonly ProfilerMarker BakeLutMarker = new("CustomToneMapping.BakeLUT");
+        private static bool _hasHdrFormat;
+        private static bool _hdrFormatSupported;
+        private static GraphicsFormat _hdrFormat;
+        private static bool _hasSdrFormat;
+        private static bool _sdrFormatSupported;
+        private static GraphicsFormat _sdrFormat;
 
-        public static int GetLutWidth(int lutSize) => lutSize * lutSize;
-        public static int GetLutHeight(int lutSize) => lutSize;
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetFormatCache()
+        {
+            _hasHdrFormat = false;
+            _hdrFormatSupported = false;
+            _hdrFormat = GraphicsFormat.None;
+            _hasSdrFormat = false;
+            _sdrFormatSupported = false;
+            _sdrFormat = GraphicsFormat.None;
+        }
+
+        public static int GetLutWidth(int lutSize) => LutLayout.GetWidth(lutSize);
+        public static int GetLutHeight(int lutSize) => LutLayout.GetHeight(lutSize);
 
         public static void BakeStripLut(ILutConfig config, ref Texture2D texture)
         {
@@ -43,24 +65,84 @@ namespace CustomToneMapping.Baker
             }
         }
 
-        private static GraphicsFormat ChooseFormat()
+        public static bool TryChooseFormat(bool isHdrOutput, out GraphicsFormat format)
         {
-            const GraphicsFormatUsage usage = GraphicsFormatUsage.Sample;
+            return TryChooseFormat(isHdrOutput, out format, out _);
+        }
 
-            if (SystemInfo.IsFormatSupported(GraphicsFormat.R16G16B16A16_SFloat, usage))
-                return GraphicsFormat.R16G16B16A16_SFloat;
+        internal static bool TryChooseFormat(bool isHdrOutput, out GraphicsFormat format,
+            out string error)
+        {
+            if (isHdrOutput && _hasHdrFormat)
+            {
+                format = _hdrFormat;
+                error = _hdrFormatSupported ? null : HdrFormatError;
+                return _hdrFormatSupported;
+            }
 
-            if (SystemInfo.IsFormatSupported(GraphicsFormat.R32G32B32A32_SFloat, usage))
-                return GraphicsFormat.R32G32B32A32_SFloat;
+            if (!isHdrOutput && _hasSdrFormat)
+            {
+                format = _sdrFormat;
+                error = _sdrFormatSupported ? null : SdrFormatError;
+                return _sdrFormatSupported;
+            }
 
-            // Fallback to 8-bit format
-            return GraphicsFormat.R8G8B8A8_UNorm;
+            var supported = TryChooseFormatUncached(isHdrOutput, out format);
+            if (isHdrOutput)
+            {
+                _hasHdrFormat = true;
+                _hdrFormatSupported = supported;
+                _hdrFormat = format;
+            }
+            else
+            {
+                _hasSdrFormat = true;
+                _sdrFormatSupported = supported;
+                _sdrFormat = format;
+            }
+
+            error = supported ? null : isHdrOutput ? HdrFormatError : SdrFormatError;
+            return supported;
+        }
+
+        private static bool TryChooseFormatUncached(bool isHdrOutput, out GraphicsFormat format)
+        {
+            if (IsFormatSupportedForLut(GraphicsFormat.R16G16B16A16_SFloat))
+            {
+                format = GraphicsFormat.R16G16B16A16_SFloat;
+                return true;
+            }
+
+            if (IsFormatSupportedForLut(GraphicsFormat.R32G32B32A32_SFloat))
+            {
+                format = GraphicsFormat.R32G32B32A32_SFloat;
+                return true;
+            }
+
+            // UNorm is acceptable for SDR only. HDR values can exceed 1.0 and
+            // would be silently clipped by the conversion job below.
+            if (!isHdrOutput &&
+                IsFormatSupportedForLut(GraphicsFormat.R8G8B8A8_UNorm))
+            {
+                format = GraphicsFormat.R8G8B8A8_UNorm;
+                return true;
+            }
+
+            format = GraphicsFormat.None;
+            return false;
+        }
+
+        private static bool IsFormatSupportedForLut(GraphicsFormat format)
+        {
+            return SystemInfo.IsFormatSupported(format, GraphicsFormatUsage.Sample) &&
+                   SystemInfo.IsFormatSupported(format, GraphicsFormatUsage.Linear) &&
+                   SystemInfo.IsFormatSupported(format, GraphicsFormatUsage.SetPixels);
         }
 
         internal static void BakeStripLut<T>(T toneMap, bool isHdrOutput, int lutSize, ref Texture2D texture)
             where T : struct, IToneMap
         {
-            if (lutSize < MinLutSize || lutSize > MaxLutSize)
+            if (!LutLayout.IsValidSize(lutSize))
             {
                 throw new ArgumentOutOfRangeException(nameof(lutSize),
                     $"LUT size must be between {MinLutSize} and {MaxLutSize}");
@@ -71,8 +153,9 @@ namespace CustomToneMapping.Baker
                 var h = GetLutHeight(lutSize);
                 var w = GetLutWidth(lutSize);
 
-                // Determine the format to use
-                var format = ChooseFormat();
+                // Determine the format to use. HDR must never fall back to UNorm.
+                if (!TryChooseFormat(isHdrOutput, out var format, out var formatError))
+                    throw new NotSupportedException(formatError);
 
                 if (!IsTextureReusable(texture, w, h, format))
                 {

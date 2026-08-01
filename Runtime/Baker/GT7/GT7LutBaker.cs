@@ -1,3 +1,4 @@
+using System;
 using Unity.Burst;
 using UnityEngine;
 
@@ -15,6 +16,9 @@ namespace CustomToneMapping.Baker.GT7
 
         public static void BakeStripLut(GT7Config settings, ref Texture2D texture)
         {
+            if (!settings.TryValidate(out var error))
+                throw new ArgumentException(error, nameof(settings));
+
             var mapper = new GT7ToneMapping();
             if (settings.IsHdrOutput)
             {

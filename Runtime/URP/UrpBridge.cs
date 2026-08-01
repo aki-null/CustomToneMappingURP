@@ -1,250 +1,299 @@
 using CustomToneMapping.Baker;
-using CustomToneMapping.URP.GT;
+using AgXConfig = CustomToneMapping.Baker.AgX.AgXConfig;
+using AgXVolume = CustomToneMapping.URP.AgXToneMapping;
+using GT7Config = CustomToneMapping.Baker.GT7.GT7Config;
+using GT7Volume = CustomToneMapping.URP.GT7ToneMapping;
+using GTConfig = CustomToneMapping.Baker.GT.GTConfig;
+using GTVolume = CustomToneMapping.URP.GT.GTToneMapping;
 using UnityEngine;
 using UnityEngine.Rendering;
 
 namespace CustomToneMapping.URP
 {
+    public enum MaterialPreparationStatus
+    {
+        Ready,
+        Disabled,
+        Invalid,
+        Unsupported
+    }
+
     public static class UrpBridge
     {
-        private const int MaxCacheEntries = 4;
-
-        private struct CacheEntry
-        {
-            public uint Key;
-            public Texture2D Texture;
-            public int LastUsedFrame;
-        }
-
-        private static readonly CacheEntry[] Cache = new CacheEntry[MaxCacheEntries];
-        private static int _cacheCount;
-        private static int _lastUsedSlot;
-
         private const string TonemapCustomKeyword = "_TONEMAP_CUSTOM";
         private static readonly int CustomTonemapLut = Shader.PropertyToID("_CustomTonemapLut");
         private static readonly int CustomTonemapParams = Shader.PropertyToID("_CustomTonemap_Params");
 
-        // Public getter for cached LUT (used by editor tools)
-        public static Texture2D CachedLutTexture =>
-            _cacheCount > 0 && _lastUsedSlot < _cacheCount ? Cache[_lastUsedSlot].Texture : null;
-
-        private static Vector3 GetLutParams(int lutSize)
+        private struct IntegrationFailure
         {
-            var lutWidth = LutBaker.GetLutWidth(lutSize);
-            var lutHeight = LutBaker.GetLutHeight(lutSize);
-            return new Vector3(
-                1.0f / lutWidth,
-                1.0f / lutHeight,
-                lutHeight - 1
-            );
+            public ToneMappingMode Mode;
+            public MaterialPreparationStatus Status;
+            public string Error;
+            public bool HasFailure;
+            public bool HasBeenReported;
         }
 
-        private static bool TryGetOrBakeLut<T>(T config, out Texture2D tex, out Vector3 lutParamsSample) where T : ILutConfig
+        private static readonly IntegrationFailure[] IntegrationFailures = new IntegrationFailure[4];
+        private static int _integrationFailureCursor;
+
+        public static Texture2D CachedLutTexture => BuiltInLutCache.CachedLutTexture;
+
+        public static void ClearCache()
         {
-            tex = null;
-            lutParamsSample = GetLutParams(config.LutSize);
-            var key = config.ConfigHash;
-            var frame = Time.frameCount;
-
-            // Search existing entries for a cache hit
-            for (var i = 0; i < _cacheCount; i++)
-            {
-                if (Cache[i].Key == key && Cache[i].Texture != null)
-                {
-                    Cache[i].LastUsedFrame = frame;
-                    _lastUsedSlot = i;
-                    tex = Cache[i].Texture;
-                    return true;
-                }
-            }
-
-            // Cache miss — find a slot to bake into
-            int slot;
-            if (_cacheCount < MaxCacheEntries)
-            {
-                // Free slot available
-                slot = _cacheCount++;
-            }
-            else
-            {
-                // Prefer slots with destroyed textures (Unity may have cleaned them up)
-                slot = -1;
-                for (var i = 0; i < _cacheCount; i++)
-                {
-                    if (Cache[i].Texture == null)
-                    {
-                        slot = i;
-                        break;
-                    }
-                }
-
-                // Otherwise evict LRU
-                if (slot < 0)
-                {
-                    slot = 0;
-                    var oldest = Cache[0].LastUsedFrame;
-                    for (var i = 1; i < MaxCacheEntries; i++)
-                    {
-                        if (Cache[i].LastUsedFrame < oldest)
-                        {
-                            oldest = Cache[i].LastUsedFrame;
-                            slot = i;
-                        }
-                    }
-                }
-            }
-
-            // Bake into slot. BakeStripLut reuses the texture if dimensions/format
-            // match, or calls CoreUtils.Destroy + recreates if they don't.
-            var texture = Cache[slot].Texture;
-            LutBaker.BakeStripLut(config, ref texture);
-
-            if (texture != null)
-            {
-                texture.name = "ToneMappingLUT";
-                texture.hideFlags = HideFlags.HideAndDontSave;
-            }
-
-            Cache[slot] = new CacheEntry
-            {
-                Key = key,
-                Texture = texture,
-                LastUsedFrame = frame
-            };
-
-            _lastUsedSlot = slot;
-            tex = texture;
-            return tex != null;
+            BuiltInLutCache.ClearCache();
+            ResetFailureState();
         }
 
-        private static bool TryGetOrBakeLut(GT7ToneMapping vol, HDROutputUtils.HDRDisplayInformation? hdrDisplayInfo,
-            int lutSize, out Texture2D tex, out Vector3 lutParamsSample)
+        internal static void ResetFailureState()
+        {
+            for (var i = 0; i < IntegrationFailures.Length; i++)
+                IntegrationFailures[i] = default;
+            _integrationFailureCursor = 0;
+            CustomLutCache.ClearCache();
+        }
+
+        private static MaterialPreparationStatus TryGetOrBakeLut(GT7Config config,
+            out Texture2D tex, out Vector3 lutParamsSample, out string error,
+            out bool shouldReportFailure)
+        {
+            return BuiltInLutCache.GetOrBake(config, out tex, out lutParamsSample, out error,
+                out shouldReportFailure);
+        }
+
+        private static MaterialPreparationStatus TryGetOrBakeLut(AgXConfig config,
+            out Texture2D tex, out Vector3 lutParamsSample, out string error,
+            out bool shouldReportFailure)
+        {
+            return BuiltInLutCache.GetOrBake(config, out tex, out lutParamsSample, out error,
+                out shouldReportFailure);
+        }
+
+        private static MaterialPreparationStatus TryGetOrBakeLut(GTConfig config,
+            out Texture2D tex, out Vector3 lutParamsSample, out string error,
+            out bool shouldReportFailure)
+        {
+            return BuiltInLutCache.GetOrBake(config, out tex, out lutParamsSample, out error,
+                out shouldReportFailure);
+        }
+
+        private static MaterialPreparationStatus TryGetOrBakeLut(GT7Volume vol,
+            HDROutputUtils.HDRDisplayInformation? hdrDisplayInfo, int lutSize, out Texture2D tex,
+            out Vector3 lutParamsSample, out string error, out bool shouldReportFailure)
         {
             tex = null;
             lutParamsSample = default;
-
-            if (vol == null) return false;
+            error = null;
+            shouldReportFailure = false;
+            if (vol == null)
+            {
+                error = "GT7 volume component is missing.";
+                shouldReportFailure = ShouldReportIntegrationFailure(
+                    ToneMappingMode.GT7, MaterialPreparationStatus.Invalid, error);
+                return MaterialPreparationStatus.Invalid;
+            }
 
             var hdr = hdrDisplayInfo.HasValue;
             var targetPeakNits = vol.targetPeakNits.value;
             if (hdr && vol.detectPeakNits.value)
-            {
                 targetPeakNits = hdrDisplayInfo.Value.maxToneMapLuminance;
-            }
 
-            var config = vol.ToConfig(targetPeakNits, hdr, lutSize);
-            return TryGetOrBakeLut(config, out tex, out lutParamsSample);
+            return TryGetOrBakeLut(vol.ToConfig(targetPeakNits, hdr, lutSize), out tex,
+                out lutParamsSample, out error, out shouldReportFailure);
         }
 
-        private static bool TryGetOrBakeLut(AgXToneMapping vol, HDROutputUtils.HDRDisplayInformation? hdrDisplayInfo,
-            int lutSize, out Texture2D tex, out Vector3 lutParamsSample)
+        private static MaterialPreparationStatus TryGetOrBakeLut(AgXVolume vol,
+            HDROutputUtils.HDRDisplayInformation? hdrDisplayInfo, int lutSize, out Texture2D tex,
+            out Vector3 lutParamsSample, out string error, out bool shouldReportFailure)
         {
             tex = null;
             lutParamsSample = default;
-
-            if (vol == null) return false;
+            error = null;
+            shouldReportFailure = false;
+            if (vol == null)
+            {
+                error = "AgX volume component is missing.";
+                shouldReportFailure = ShouldReportIntegrationFailure(
+                    ToneMappingMode.AgX, MaterialPreparationStatus.Invalid, error);
+                return MaterialPreparationStatus.Invalid;
+            }
 
             var hdr = hdrDisplayInfo.HasValue;
             var targetPeakNits = vol.maxNits.value;
             if (hdr && vol.detectBrightnessLimits.value)
-            {
                 targetPeakNits = hdrDisplayInfo.Value.maxToneMapLuminance;
-            }
 
-            var config = vol.ToConfig(targetPeakNits, hdr, lutSize);
-            return TryGetOrBakeLut(config, out tex, out lutParamsSample);
+            return TryGetOrBakeLut(vol.ToConfig(targetPeakNits, hdr, lutSize), out tex,
+                out lutParamsSample, out error, out shouldReportFailure);
         }
 
-        private static bool TryGetOrBakeLut(GTToneMapping vol, HDROutputUtils.HDRDisplayInformation? hdrDisplayInfo,
-            int lutSize, out Texture2D tex, out Vector3 lutParamsSample)
+        private static MaterialPreparationStatus TryGetOrBakeLut(GTVolume vol,
+            HDROutputUtils.HDRDisplayInformation? hdrDisplayInfo, int lutSize, out Texture2D tex,
+            out Vector3 lutParamsSample, out string error, out bool shouldReportFailure)
         {
             tex = null;
             lutParamsSample = default;
-
-            if (vol == null) return false;
+            error = null;
+            shouldReportFailure = false;
+            if (vol == null)
+            {
+                error = "GT volume component is missing.";
+                shouldReportFailure = ShouldReportIntegrationFailure(
+                    ToneMappingMode.GT, MaterialPreparationStatus.Invalid, error);
+                return MaterialPreparationStatus.Invalid;
+            }
 
             var hdr = hdrDisplayInfo.HasValue;
             var targetPeakNits = vol.targetPeakNits.value;
             if (hdr && vol.detectPeakNits.value)
-            {
                 targetPeakNits = hdrDisplayInfo.Value.maxToneMapLuminance;
-            }
 
-            var config = vol.ToConfig(targetPeakNits, hdr, lutSize);
-            return TryGetOrBakeLut(config, out tex, out lutParamsSample);
+            return TryGetOrBakeLut(vol.ToConfig(targetPeakNits, hdr, lutSize), out tex,
+                out lutParamsSample, out error, out shouldReportFailure);
         }
 
-        public static bool PrepareMaterial(Material material, HDROutputUtils.HDRDisplayInformation? hdrDisplayInfo)
+        public static bool TryValidateCustomLut(Texture2D lut, out string error)
         {
-            var customMode = VolumeManager.instance.stack.GetComponent<CustomToneMapping>();
+            return CustomLutConfig.TryValidate(lut, out error);
+        }
 
-            if (customMode.mode.value == ToneMappingMode.None)
+        private static bool TryPrepareCustomLut(Texture2D lut, out Vector3 sample,
+            out string error, out bool shouldReportFailure)
+        {
+            return CustomLutCache.TryGetOrValidate(lut, out sample, out error,
+                out shouldReportFailure);
+        }
+
+        public static bool PrepareMaterial(Material material,
+            HDROutputUtils.HDRDisplayInformation? hdrDisplayInfo)
+        {
+            return PrepareMaterialWithStatus(material, hdrDisplayInfo) == MaterialPreparationStatus.Ready;
+        }
+
+        public static MaterialPreparationStatus PrepareMaterialWithStatus(Material material,
+            HDROutputUtils.HDRDisplayInformation? hdrDisplayInfo)
+        {
+            if (material == null)
+                return MaterialPreparationStatus.Invalid;
+
+            var volumeManager = VolumeManager.instance;
+            var stack = volumeManager?.stack;
+            var customMode = stack?.GetComponent<CustomToneMapping>();
+            if (customMode == null || customMode.mode.value == ToneMappingMode.None)
             {
-                // Do nothing for None mode - let URP handle tone mapping normally
-                return false;
+                DisableCustomKeyword(material);
+                return MaterialPreparationStatus.Disabled;
             }
 
             var lutSize = customMode.lutSize.value;
-            Texture2D lut;
+            Texture2D lut = null;
+            Vector3 sample = default;
+            string error = null;
+            var shouldReportFailure = false;
+            MaterialPreparationStatus status;
+
             switch (customMode.mode.value)
             {
                 case ToneMappingMode.GT:
-                    {
-                        var gt = VolumeManager.instance.stack.GetComponent<GTToneMapping>();
-                        if (TryGetOrBakeLut(gt, hdrDisplayInfo, lutSize, out lut, out var sample))
-                        {
-                            SetupMaterial(material, lut, sample);
-                        }
-
-                        break;
-                    }
+                    status = TryGetOrBakeLut(stack.GetComponent<GTVolume>(), hdrDisplayInfo, lutSize,
+                        out lut, out sample, out error, out shouldReportFailure);
+                    break;
                 case ToneMappingMode.GT7:
-                    {
-                        var gt7 = VolumeManager.instance.stack.GetComponent<GT7ToneMapping>();
-                        if (TryGetOrBakeLut(gt7, hdrDisplayInfo, lutSize, out lut, out var sample))
-                        {
-                            SetupMaterial(material, lut, sample);
-                        }
-
-                        break;
-                    }
+                    status = TryGetOrBakeLut(stack.GetComponent<GT7Volume>(), hdrDisplayInfo, lutSize,
+                        out lut, out sample, out error, out shouldReportFailure);
+                    break;
                 case ToneMappingMode.AgX:
-                    {
-                        var agx = VolumeManager.instance.stack.GetComponent<AgXToneMapping>();
-                        if (TryGetOrBakeLut(agx, hdrDisplayInfo, lutSize, out lut, out var sample))
-                        {
-                            SetupMaterial(material, lut, sample);
-                        }
-
-                        break;
-                    }
+                    status = TryGetOrBakeLut(stack.GetComponent<AgXVolume>(), hdrDisplayInfo, lutSize,
+                        out lut, out sample, out error, out shouldReportFailure);
+                    break;
                 case ToneMappingMode.CustomLUT:
-                    {
-                        lut = customMode.lutTexture.value as Texture2D;
-                        if (lut != null)
-                        {
-                            SetupMaterial(material, lut, new Vector3(1.0f / lut.width, 1.0f / lut.height, lut.height - 1));
-                        }
-                        else
-                        {
-                            return false;
-                        }
-
-                        break;
-                    }
+                    lut = customMode.lutTexture.value as Texture2D;
+                    status = TryPrepareCustomLut(lut, out sample, out error, out shouldReportFailure)
+                        ? MaterialPreparationStatus.Ready
+                        : MaterialPreparationStatus.Invalid;
+                    break;
                 default:
-                    throw new System.ArgumentOutOfRangeException(nameof(customMode.mode.value), customMode.mode.value,
-                        null);
+                    status = MaterialPreparationStatus.Invalid;
+                    error = $"Unsupported tone mapping mode: {customMode.mode.value}.";
+                    shouldReportFailure = ShouldReportIntegrationFailure(
+                        customMode.mode.value, status, error);
+                    break;
             }
 
+            if (status != MaterialPreparationStatus.Ready)
+            {
+                DisableCustomKeyword(material);
+                LogFailure(customMode.mode.value, status, error, shouldReportFailure);
+                return status;
+            }
+
+            SetupMaterial(material, lut, sample);
+            return MaterialPreparationStatus.Ready;
+        }
+
+        private static bool ShouldReportIntegrationFailure(ToneMappingMode mode,
+            MaterialPreparationStatus status, string error)
+        {
+            for (var i = 0; i < IntegrationFailures.Length; i++)
+            {
+                ref var failure = ref IntegrationFailures[i];
+                if (!failure.HasFailure || failure.Mode != mode || failure.Status != status ||
+                    failure.Error != error)
+                    continue;
+
+                if (failure.HasBeenReported)
+                    return false;
+
+                failure.HasBeenReported = true;
+                return true;
+            }
+
+            for (var i = 0; i < IntegrationFailures.Length; i++)
+            {
+                ref var failure = ref IntegrationFailures[i];
+                if (failure.HasFailure)
+                    continue;
+
+                failure.Mode = mode;
+                failure.Status = status;
+                failure.Error = error;
+                failure.HasFailure = true;
+                failure.HasBeenReported = true;
+                return true;
+            }
+
+            var replacement = _integrationFailureCursor++ % IntegrationFailures.Length;
+            IntegrationFailures[replacement] = new IntegrationFailure
+            {
+                Mode = mode,
+                Status = status,
+                Error = error,
+                HasFailure = true,
+                HasBeenReported = true
+            };
             return true;
+        }
+
+        private static void LogFailure(ToneMappingMode mode, MaterialPreparationStatus status,
+            string error, bool shouldReportFailure)
+        {
+            if (!shouldReportFailure)
+                return;
+
+            Debug.LogWarning($"Custom tone mapping disabled for {mode}: {error ?? status.ToString()}.");
         }
 
         private static void SetupMaterial(Material material, Texture2D lut, Vector3 sample)
         {
-            material.EnableKeyword(TonemapCustomKeyword);
+            if (!material.IsKeywordEnabled(TonemapCustomKeyword))
+                material.EnableKeyword(TonemapCustomKeyword);
             material.SetTexture(CustomTonemapLut, lut);
             material.SetVector(CustomTonemapParams, sample);
+        }
+
+        private static void DisableCustomKeyword(Material material)
+        {
+            if (material.IsKeywordEnabled(TonemapCustomKeyword))
+                material.DisableKeyword(TonemapCustomKeyword);
         }
     }
 }

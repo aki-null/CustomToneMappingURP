@@ -64,6 +64,8 @@ namespace CustomToneMapping.URP.Editor
                 var lutTexture = _lutTexture.value.objectReferenceValue;
                 var isOverrideEnabled = _lutTexture.overrideState.boolValue;
 
+                DrawCustomLutValidation(lutTexture as Texture2D);
+
                 if (lutTexture != null && !isOverrideEnabled)
                 {
                     _lutTexture.overrideState.boolValue = true;
@@ -80,6 +82,42 @@ namespace CustomToneMapping.URP.Editor
                     _lutTexture.overrideState.boolValue = false;
                     _lutTexture.value.serializedObject.ApplyModifiedProperties();
                 }
+            }
+        }
+
+        private static void DrawCustomLutValidation(Texture2D lutTexture)
+        {
+            if (!UrpBridge.TryValidateCustomLut(lutTexture, out var error))
+            {
+                EditorGUILayout.HelpBox(error, MessageType.Error);
+                return;
+            }
+
+            var assetPath = AssetDatabase.GetAssetPath(lutTexture);
+            var importer = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+            if (importer == null)
+                return;
+
+            var hasInvalidSettings = importer.sRGBTexture || importer.mipmapEnabled ||
+                                     importer.npotScale != TextureImporterNPOTScale.None ||
+                                     importer.wrapMode != TextureWrapMode.Clamp ||
+                                     importer.filterMode != FilterMode.Bilinear ||
+                                     importer.textureCompression != TextureImporterCompression.Uncompressed;
+            if (!hasInvalidSettings)
+                return;
+
+            EditorGUILayout.HelpBox(
+                "Custom LUT import settings should be linear, uncompressed, clamp-wrapped, bilinear-filtered, and mipmaps disabled.",
+                MessageType.Warning);
+            if (GUILayout.Button("Fix LUT Import Settings"))
+            {
+                importer.sRGBTexture = false;
+                importer.mipmapEnabled = false;
+                importer.npotScale = TextureImporterNPOTScale.None;
+                importer.wrapMode = TextureWrapMode.Clamp;
+                importer.filterMode = FilterMode.Bilinear;
+                importer.textureCompression = TextureImporterCompression.Uncompressed;
+                importer.SaveAndReimport();
             }
         }
 
