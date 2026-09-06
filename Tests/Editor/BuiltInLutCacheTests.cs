@@ -1,5 +1,7 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
+using System.Reflection;
 using CustomToneMapping.Baker;
 using CustomToneMapping.Baker.AgX;
 using CustomToneMapping.Baker.GT;
@@ -8,6 +10,7 @@ using CustomToneMapping.URP;
 using NUnit.Framework;
 using Unity.Profiling;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.TestTools;
 
 namespace CustomToneMapping.Tests
@@ -222,6 +225,146 @@ namespace CustomToneMapping.Tests
             UrpBridge.ClearCache();
 
             Assert.IsTrue(texture == null);
+        }
+
+        [Test]
+        public void ReadyLutExpiresAfterTenUnusedFrames()
+        {
+            AssumeLutBakingSupported();
+            var config = CreateConfig(0.0f);
+            var frame = Time.frameCount;
+            Assert.AreEqual(MaterialPreparationStatus.Ready,
+                BuiltInLutCache.GetOrBake(config, out var texture, out var sample, out _, out _));
+
+            BuiltInLutCache.PurgeUnused(frame + 10);
+            Assert.IsTrue(texture != null);
+            Assert.AreSame(texture, BuiltInLutCache.CachedLutTexture);
+
+            BuiltInLutCache.PurgeUnused(frame + 11);
+            Assert.IsTrue(texture == null);
+            Assert.IsNull(BuiltInLutCache.CachedLutTexture);
+
+            Assert.AreEqual(MaterialPreparationStatus.Ready,
+                BuiltInLutCache.GetOrBake(config, out var replacement, out var newSample, out _, out _));
+            Assert.IsTrue(replacement != null);
+            Assert.AreNotSame(texture, replacement);
+            Assert.AreEqual(sample, newSample);
+        }
+
+        [Test]
+        public void ReadyHitRefreshesFrameAge()
+        {
+            AssumeLutBakingSupported();
+            var config = CreateConfig(0.0f);
+            BuiltInLutCache.GetOrBake(config, out var texture, out _, out _, out _);
+            AgeReadyLuts(10);
+
+            Assert.AreEqual(MaterialPreparationStatus.Ready,
+                BuiltInLutCache.GetOrBake(config, out var touched, out _, out _, out _));
+            BuiltInLutCache.PurgeUnused(Time.frameCount + 1);
+
+            Assert.IsTrue(texture != null);
+            Assert.AreSame(texture, touched);
+            Assert.AreSame(texture, BuiltInLutCache.CachedLutTexture);
+        }
+
+        [Test]
+        public void PurgePreservesRecentlyUsedLutsAcrossMapperKinds()
+        {
+            AssumeLutBakingSupported();
+            var gt7 = CreateGT7Config(32);
+            BuiltInLutCache.GetOrBake(CreateConfig(0.0f), out var gtTexture, out _, out _, out _);
+            BuiltInLutCache.GetOrBake(gt7, out var gt7Texture, out _, out _, out _);
+            BuiltInLutCache.GetOrBake(CreateAgXConfig(32), out var agxTexture, out _, out _, out _);
+            AgeReadyLuts(11);
+
+            // Refresh an entry other than the last-slot shortcut.
+            Assert.AreEqual(MaterialPreparationStatus.Ready,
+                BuiltInLutCache.GetOrBake(gt7, out var touched, out _, out _, out _));
+            BuiltInLutCache.PurgeUnused(Time.frameCount);
+
+            Assert.IsTrue(gtTexture == null);
+            Assert.IsTrue(agxTexture == null);
+            Assert.IsTrue(gt7Texture != null);
+            Assert.AreSame(gt7Texture, touched);
+            Assert.AreSame(gt7Texture, BuiltInLutCache.CachedLutTexture);
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void EndContextCleanupRemainsRegisteredAfterClear(bool exitingPlayMode)
+        {
+            AssumeLutBakingSupported();
+            BuiltInLutCache.GetOrBake(CreateConfig(0.0f), out _, out _, out _, out _);
+            if (exitingPlayMode)
+                ((Action)GetCacheSubscriber(typeof(Application), "quitting"))();
+            else
+                UrpBridge.ClearCache();
+            BuiltInLutCache.GetOrBake(CreateConfig(0.0f), out var texture, out _, out _, out _);
+            AgeReadyLuts(11);
+
+            // Invoke only this cache's registered subscriber, without rendering or
+            // calling unrelated subscribers with a synthetic render context.
+            var cleanup = (Action<ScriptableRenderContext, List<Camera>>)
+                GetCacheSubscriber(typeof(RenderPipelineManager), "endContextRendering");
+            cleanup(default, null);
+
+            Assert.IsTrue(texture == null, "Cleanup must not require another LUT request.");
+            Assert.IsNull(BuiltInLutCache.CachedLutTexture);
+        }
+
+        [Test]
+        public void PurgeDoesNotResetFailureSuppression()
+        {
+            AssumeLutBakingSupported();
+            BuiltInLutCache.GetOrBake(CreateConfig(0.0f), out var texture, out _, out _, out _);
+            var invalid = CreateConfig(0.0f);
+            invalid.Contrast = float.NaN;
+            BuiltInLutCache.GetOrBake(invalid, out _, out _, out var error, out var shouldReport);
+            Assert.IsTrue(shouldReport);
+
+            BuiltInLutCache.PurgeUnused(Time.frameCount + 11);
+            Assert.IsTrue(texture == null);
+            Assert.AreEqual(MaterialPreparationStatus.Invalid,
+                BuiltInLutCache.GetOrBake(invalid, out _, out _, out var repeatedError, out shouldReport));
+            Assert.AreEqual(error, repeatedError);
+            Assert.IsFalse(shouldReport);
+        }
+
+        private static Delegate GetCacheSubscriber(Type eventOwner, string eventName)
+        {
+            var callbacks = (Delegate)eventOwner
+                .GetField(eventName, BindingFlags.Static | BindingFlags.NonPublic)
+                ?.GetValue(null);
+            Assert.IsNotNull(callbacks);
+            Delegate subscriber = null;
+            foreach (var callback in callbacks.GetInvocationList())
+            {
+                if (callback.Method.DeclaringType != typeof(BuiltInLutCache))
+                    continue;
+
+                Assert.IsNull(subscriber, "Cache cleanup must be registered only once.");
+                subscriber = callback;
+            }
+
+            Assert.IsNotNull(subscriber);
+            return subscriber;
+        }
+
+        private static void AgeReadyLuts(int frames)
+        {
+            // Edit-mode frame advancement depends on editor rendering. Age the
+            // stored timestamps instead of adding a test clock to the runtime.
+            var entries = (Array)typeof(BuiltInLutCache)
+                .GetField("ReadyEntries", BindingFlags.Static | BindingFlags.NonPublic)
+                .GetValue(null);
+            var frameField = entries.GetType().GetElementType().GetField("LastUsedFrame");
+            for (var i = 0; i < entries.Length; i++)
+            {
+                var entry = entries.GetValue(i);
+                frameField.SetValue(entry, unchecked(Time.frameCount - frames));
+                entries.SetValue(entry, i);
+            }
         }
 
         private static GTConfig CreateConfig(float blackOffset, int lutSize = 32)

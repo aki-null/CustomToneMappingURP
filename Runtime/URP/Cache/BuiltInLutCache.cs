@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using CustomToneMapping.Baker;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -14,6 +15,8 @@ namespace CustomToneMapping.URP
     internal static partial class BuiltInLutCache
     {
         private const int Capacity = 4;
+        // Match RenderGraph's grace period for resources used by intermittent cameras.
+        private const int StaleLifetimeFrames = 10;
 
         // This layout is shared by both tables. Failure-only fields remain unused
         // in ReadyEntries; Texture remains null in FailureEntries.
@@ -24,6 +27,7 @@ namespace CustomToneMapping.URP
             public Texture2D Texture;
             public Vector3 LutParams;
             public ulong LastUsedStamp;
+            public int LastUsedFrame;
             public bool IsOccupied;
             public MaterialPreparationStatus FailureStatus;
             public string FailureMessage;
@@ -47,6 +51,21 @@ namespace CustomToneMapping.URP
         private static int _lastReadySlot = -1;
         private static int _lastFailureSlot = -1;
 
+        static BuiltInLutCache()
+        {
+            // Register once per domain, including edit mode and play mode without
+            // domain reload. Cleanup must run even when tonemapping is disabled.
+            // Keep subscriptions when clearing: Application.quitting also fires
+            // on leaving play mode, when this domain can remain alive.
+            RenderPipelineManager.endContextRendering += OnEndContextRendering;
+            Application.quitting += ClearForLifecycleChange;
+#if UNITY_EDITOR
+            UnityEditor.AssemblyReloadEvents.beforeAssemblyReload += ClearForLifecycleChange;
+            UnityEditor.EditorApplication.quitting += ClearForLifecycleChange;
+            UnityEditor.EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+#endif
+        }
+
         // Used by the renderer after a successful lookup/bake. Failure lookups
         // never change this to null or hide the most recently used ready LUT.
         internal static Texture2D CachedLutTexture =>
@@ -55,23 +74,45 @@ namespace CustomToneMapping.URP
                 : null;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        private static void ResetStatics()
+        private static void ClearForLifecycleChange()
         {
             ClearCache();
             UrpBridge.ResetFailureState();
         }
 
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-        private static void RegisterCleanup()
+        private static void OnEndContextRendering(ScriptableRenderContext context, List<Camera> cameras)
         {
-            Application.quitting -= ClearForShutdown;
-            Application.quitting += ClearForShutdown;
+            PurgeUnused(Time.frameCount);
         }
 
-        private static void ClearForShutdown()
+#if UNITY_EDITOR
+        private static void OnPlayModeStateChanged(UnityEditor.PlayModeStateChange state)
         {
-            ClearCache();
-            UrpBridge.ResetFailureState();
+            if (state == UnityEditor.PlayModeStateChange.ExitingEditMode ||
+                state == UnityEditor.PlayModeStateChange.ExitingPlayMode)
+            {
+                ClearForLifecycleChange();
+            }
+        }
+#endif
+
+        // Called outside graph execution. Keep access-stamp LRU independent of
+        // frame age so multiple requests in one frame retain their exact ordering.
+        internal static void PurgeUnused(int currentFrame)
+        {
+            for (var i = 0; i < Capacity; i++)
+            {
+                ref var entry = ref ReadyEntries[i];
+                if (!entry.IsOccupied ||
+                    unchecked((uint)(currentFrame - entry.LastUsedFrame)) <= StaleLifetimeFrames)
+                    continue;
+
+                CoreUtils.Destroy(entry.Texture);
+                entry = default;
+                ClearReadySnapshot(i);
+                if (_lastReadySlot == i)
+                    _lastReadySlot = -1;
+            }
         }
 
         internal static void ClearCache()
@@ -168,6 +209,7 @@ namespace CustomToneMapping.URP
                     Texture = candidate,
                     LutParams = lutParams,
                     LastUsedStamp = NextAccessStamp(),
+                    LastUsedFrame = Time.frameCount,
                     IsOccupied = true
                 };
                 _lastReadySlot = slot;
@@ -271,7 +313,10 @@ namespace CustomToneMapping.URP
             // counter keeps the bookkeeping small without coupling capacities.
             entry.LastUsedStamp = NextAccessStamp();
             if (isReady)
+            {
+                entry.LastUsedFrame = Time.frameCount;
                 _lastReadySlot = slot;
+            }
             else
                 _lastFailureSlot = slot;
             texture = entry.Texture;

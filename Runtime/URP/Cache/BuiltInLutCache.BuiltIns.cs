@@ -24,6 +24,13 @@ namespace CustomToneMapping.URP
         private static readonly GT7Config[] Gt7FailureSnapshots = new GT7Config[Capacity];
         private static readonly AgXConfig[] AgxFailureSnapshots = new AgXConfig[Capacity];
 
+        private static void ClearReadySnapshot(int slot)
+        {
+            GtSnapshots[slot] = default;
+            Gt7Snapshots[slot] = default;
+            AgxSnapshots[slot] = default;
+        }
+
         private static void ClearSnapshots()
         {
             System.Array.Clear(GtSnapshots, 0, GtSnapshots.Length);
