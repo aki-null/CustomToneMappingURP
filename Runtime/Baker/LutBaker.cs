@@ -349,22 +349,23 @@ namespace CustomToneMapping.Baker
             return new float3(r, g, b);
         }
 
-        // Alexa LogC (El 1000) converters
+        // ARRI LogC3 (SUP 3.x, EI 1000), linear scene exposure factors.
         private static class AlexaLogC
         {
-            // Constants from URP HLSL (Color.hlsl)
+            // ARRI specification; keep in sync with Runtime/URP/Shaders/LogC.hlsl.
+            // Unity's Color.hlsl uses a different F and normally omits the linear toe.
             private const float Cut = 0.011361f;
             private const float A = 5.555556f;
             private const float B = 0.047996f;
             private const float C = 0.244161f;
             private const float D = 0.386036f;
             private const float E = 5.301883f;
-            private const float F = 0.092819f;
+            private const float F = 0.092814f;
 
             [BurstCompile]
             public static float3 LogCToLinear(float3 x)
             {
-                // Piecewise precise path from URP Color.hlsl
+                // Standard piecewise decoder, inverse of CustomTonemapLinearToLogC.
                 var hi = (Pow10((x - new float3(D)) / C) - new float3(B)) / A;
                 var lo = (x - new float3(F)) / E;
                 // threshold is on LogC domain: e*cut + f

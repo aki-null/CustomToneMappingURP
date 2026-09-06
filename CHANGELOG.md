@@ -2,11 +2,14 @@
 
 ## Unreleased
 
+### Fixed
+- Corrected custom LUT sampling to use standard piecewise ARRI LogC3 EI 1000 encoding, fixing the shadow mismatch with CPU-baked and standard custom LUTs in SDR, HDR, and LDR shader integration paths
+- Corrected the CPU LUT baker's LogC3 EI 1000 black offset constant to `0.092814`
+
 ### Changed
 - Optimized the Renderer Feature's Render Graph integration by handing the tone-mapped LUT directly to downstream post-processing, eliminating the copy-back pass and allowing URP's original grading LUT to remain memoryless when framebuffer fetch pass merging is available
 - Improved built-in LUT caching to avoid unnecessary rebakes and preserve valid LUTs when configurations fail validation
 - Improved invalid-configuration handling and HDR LUT format safety
-- URP 17.5+ requires Render Graph mode; the compatibility path remains available for URP 17.0–17.4
 
 ## 1.2.4 - 2026-05-09
 
@@ -33,7 +36,7 @@
 ## 1.2.1 - 2026-03-19
 
 ### Fixed
-- Compilation error on URP 17.5+ where legacy rendering pipeline methods were removed from ScriptableRenderPass
+- Compilation error on URP 17.5+ where legacy rendering callbacks used by the Renderer Feature were removed; the Renderer Feature requires Render Graph on these versions
 
 ## 1.2.0 - 2026-02-02
 

@@ -116,9 +116,9 @@ namespace CustomToneMapping.URP.RendererFeatures
         #endregion
 
 #if !URP_17_5_OR_NEWER
-        // URP 17.5 removed the legacy ScriptableRenderPass callbacks used below.
-        // The compatibility path is therefore available through URP 17.4 only;
-        // URP 17.5+ projects must use URP's Render Graph mode.
+        // URP 17.5 removed the public legacy ScriptableRenderPass callbacks used below.
+        // Unity 6.4 / URP 17.4 already removed Compatibility Mode. The remaining
+        // callbacks are removed from the public API in URP 17.5.
         #region Non-Render Graph Path (Legacy)
 
         // Reflection cache

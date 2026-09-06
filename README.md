@@ -42,12 +42,6 @@ Since adding new tone mapping functions to URP is not officially supported throu
 * Unity 6 or later
 * Universal Render Pipeline 17.0 or later
 
-## Compatibility and Performance
-
-The package declares URP 17.0 as its minimum dependency. URP 17.0–17.4 support both the compatibility path and Render Graph path. URP 17.5 and later removed the legacy `ScriptableRenderPass` callbacks, so those versions require URP's Render Graph mode for this feature. The native URP integration requires the matching URP source changes described below.
-
-Baked modes generate LUTs synchronously on first use or configuration change, then cache them by complete configuration.
-
 ## Installation
 
 Install via OpenUPM:
@@ -337,21 +331,14 @@ Add the custom tonemapper assembly reference to the `references` array:
 
 ## Technical Details
 
-Rather than performing tone mapping calculations directly on the GPU during rendering, the system pre-computes the tone mapping results into a 3D lookup table on the CPU.
+Tone mapping curves are baked into a 3D LUT on the CPU. The GPU samples this LUT during URP color grading, avoiding the cost of evaluating the complete tone mapping curve for every screen pixel. The LUT is rebuilt when its settings change.
 
-The workflow operates as follows: Volume components supply tone mapping parameters, which the system uses to generate a 3D LUT. This LUT is stored as a 2D texture strip and uploaded to the GPU. The LUT is regenerated automatically when parameters change.
+The LUT uses a 2D `N² × N` texture layout and ARRI LogC3 EI 1000 input encoding. LogC distributes samples across a wide linear-light range while preserving useful precision in shadows. The LUT size setting controls the quality, baking cost, and memory tradeoff.
 
-During rendering, this pre-computed LUT is integrated into URP's color grading stage to apply the tone mapping.
+Tone mapping must remain part of URP's color grading stage so bloom, color grading, film grain, dithering, and output conversion run in the expected order. The two integration methods preserve this ordering differently:
 
-### Pipeline Ordering
-
-For correct results, tone mapping must be applied after bloom composition. In URP, the UberPost shader composites bloom and applies color grading within a single fragment shader — there is no injection point between the two operations.
-
-Tone mapping in URP is part of the color grading stage. In HDR grading mode, both color grading and tone mapping are baked together into the color grading LUT during generation. In LDR grading mode, tone mapping is applied within the color grading function before the color grading LUT is sampled. Either way, tone mapping occurs after bloom composition inside the UberPost pass.
-
-Applying tone mapping as a separate render pass cannot achieve this ordering. A pass before UberPost would tonemap the scene before bloom is composited, causing bloom to add un-tonemapped values onto an already tonemapped image. A pass after UberPost would separate tone mapping from color grading. In LDR grading mode, this reverses the intended order since URP normally tonemaps before applying the color grading LUT. In HDR grading mode, the operation order is preserved, but film grain, dithering, and gamma conversion — which run after color grading within UberPost — would process un-tonemapped values outside their expected range.
-
-Both integration methods in this package solve this by integrating custom tone mapping into URP's color grading stage. The renderer feature method intercepts URP's internal color grading LUT after generation and applies custom tone mapping to it. The URP modification method hooks into the LUT builder shader and the color grading function. In both cases, tone mapping is applied at the correct point in the pipeline — after bloom composition, within the color grading stage.
+- The renderer feature transforms URP's generated color grading LUT without modifying URP files. It requires HDR color grading and adds a LUT-processing pass.
+- The URP modification integrates custom tone mapping directly into URP's LUT and post-processing shaders. It supports both HDR and LDR color grading and avoids the extra renderer-feature pass.
 
 ## License
 

@@ -7,6 +7,7 @@
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
         "Unity.Mathematics",
+        "Unity.Collections",
         "Unity.Burst",
         "Unity.RenderPipelines.Core.Runtime",
         "Unity.RenderPipelines.Universal.Runtime"
