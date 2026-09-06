@@ -1,15 +1,14 @@
 # Changelog
 
-## Unreleased
+## 1.2.5 - 2026-09-06
 
 ### Fixed
-- Corrected custom LUT sampling to use standard piecewise ARRI LogC3 EI 1000 encoding, fixing the shadow mismatch with CPU-baked and standard custom LUTs in SDR, HDR, and LDR shader integration paths
-- Corrected the CPU LUT baker's LogC3 EI 1000 black offset constant to `0.092814`
+- Corrected ARRI LogC3 EI 1000 encoding in custom LUT sampling and CPU baking, fixing shadow mismatches across SDR, HDR, and LDR paths
 
 ### Changed
-- Optimized the Renderer Feature's Render Graph integration by handing the tone-mapped LUT directly to downstream post-processing, eliminating the copy-back pass and allowing URP's original grading LUT to remain memoryless when framebuffer fetch pass merging is available
-- Improved built-in LUT caching to avoid unnecessary rebakes and preserve valid LUTs when configurations fail validation
-- Improved invalid-configuration handling and HDR LUT format safety
+- Optimized Render Graph LUT handoff by removing the copy-back pass
+- Added validated LUT caching to avoid unnecessary rebakes, preserve valid LUTs after configuration errors, and expire stale entries
+- Improved configuration validation and HDR LUT format safety
 
 ## 1.2.4 - 2026-05-09
 
