@@ -1,8 +1,7 @@
 using System;
 using System.Collections;
-using System.Collections.Generic;
-using System.Reflection;
 using CustomToneMapping.Baker;
+using CustomToneMapping.Baker.ACES2;
 using CustomToneMapping.Baker.AgX;
 using CustomToneMapping.Baker.GT;
 using CustomToneMapping.Baker.GT7;
@@ -10,7 +9,6 @@ using CustomToneMapping.URP;
 using NUnit.Framework;
 using Unity.Profiling;
 using UnityEngine;
-using UnityEngine.Rendering;
 using UnityEngine.TestTools;
 
 namespace CustomToneMapping.Tests
@@ -29,36 +27,26 @@ namespace CustomToneMapping.Tests
             UrpBridge.ClearCache();
         }
 
-        [Test]
-        public void ReusesFailureForIdenticalNonFiniteConfig()
+        // Tick only counts a frame whose frameCount differs from the last one, so tests drive their own frame numbers.
+        private static int _frameCount = 1 << 20;
+
+        private static void AdvanceFrames(int frames)
         {
-            var config = new GTConfig
-            {
-                TargetPeakNits = 1000.0f,
-                IsHdrOutput = false,
-                ReferenceLuminance = 100.0f,
-                SdrPaperWhite = 100.0f,
-                Contrast = float.NaN,
-                LinearSectionStart = 0.22f,
-                LinearSectionLength = 0.4f,
-                BlackTightness = 1.33f,
-                BlackOffset = 0.0f,
-                LutSize = 32
-            };
+            for (var i = 0; i < frames; i++)
+                BuiltInLutCache.Tick(++_frameCount);
+        }
 
-            var first = BuiltInLutCache.GetOrBake(config, out var firstTexture,
-                out _, out var firstError, out var firstShouldReport);
-            var second = BuiltInLutCache.GetOrBake(config, out var secondTexture,
-                out _, out var secondError, out var secondShouldReport);
+        [Test]
+        public void InvalidConfigBakesNothing()
+        {
+            var config = CreateConfig(0.0f);
+            config.Contrast = float.NaN;
 
-            Assert.AreEqual(MaterialPreparationStatus.Invalid, first);
-            Assert.AreEqual(MaterialPreparationStatus.Invalid, second);
-            Assert.IsNull(firstTexture);
-            Assert.IsNull(secondTexture);
-            Assert.IsNotNull(firstError);
-            Assert.AreEqual(firstError, secondError);
-            Assert.IsTrue(firstShouldReport);
-            Assert.IsFalse(secondShouldReport);
+            var status = BuiltInLutCache.GetOrBake(config, out var texture, out var error);
+
+            Assert.AreEqual(MaterialPreparationStatus.Invalid, status);
+            Assert.IsNull(texture);
+            Assert.IsNotNull(error);
         }
 
         [Test]
@@ -67,115 +55,73 @@ namespace CustomToneMapping.Tests
             AssumeLutBakingSupported();
             var config = CreateConfig(0.0f);
 
-            var firstStatus = BuiltInLutCache.GetOrBake(config, out var firstTexture,
-                out var firstParams, out var firstError, out var firstShouldReport);
-            var secondStatus = BuiltInLutCache.GetOrBake(config, out var secondTexture,
-                out var secondParams, out var secondError, out var secondShouldReport);
+            Assert.AreEqual(MaterialPreparationStatus.Ready, BuiltInLutCache.GetOrBake(config, out var first, out var firstError));
+            Assert.AreEqual(MaterialPreparationStatus.Ready, BuiltInLutCache.GetOrBake(config, out var second, out var secondError));
 
-            Assert.AreEqual(MaterialPreparationStatus.Ready, firstStatus);
-            Assert.AreEqual(MaterialPreparationStatus.Ready, secondStatus);
-            Assert.IsNotNull(firstTexture);
-            Assert.AreSame(firstTexture, secondTexture);
-            Assert.AreEqual(firstParams, secondParams);
+            Assert.IsNotNull(first);
+            Assert.AreSame(first, second);
             Assert.IsNull(firstError);
             Assert.IsNull(secondError);
-            Assert.IsFalse(firstShouldReport);
-            Assert.IsFalse(secondShouldReport);
         }
 
         [Test]
         public void InvalidRequestDoesNotEvictReadyLuts()
         {
             AssumeLutBakingSupported();
-            var configs = new GTConfig[4];
-            var textures = new Texture2D[4];
-
+            var configs = new GTConfig[BuiltInLutCache.Capacity];
+            var textures = new Texture2D[configs.Length];
             for (var i = 0; i < configs.Length; i++)
             {
                 configs[i] = CreateConfig(i * 0.01f);
-                var status = BuiltInLutCache.GetOrBake(configs[i], out textures[i],
-                    out _, out _, out _);
-                Assert.AreEqual(MaterialPreparationStatus.Ready, status);
+                Assert.AreEqual(MaterialPreparationStatus.Ready, BuiltInLutCache.GetOrBake(configs[i], out textures[i], out _));
             }
 
             var invalid = CreateConfig(0.25f);
             invalid.Contrast = float.NaN;
-            var invalidStatus = BuiltInLutCache.GetOrBake(invalid, out _, out _,
-                out _, out var shouldReport);
-
-            Assert.AreEqual(MaterialPreparationStatus.Invalid, invalidStatus);
-            Assert.IsTrue(shouldReport);
+            Assert.AreEqual(MaterialPreparationStatus.Invalid, BuiltInLutCache.GetOrBake(invalid, out _, out _));
 
             for (var i = 0; i < configs.Length; i++)
             {
-                var status = BuiltInLutCache.GetOrBake(configs[i], out var texture,
-                    out _, out _, out var hitShouldReport);
-                Assert.AreEqual(MaterialPreparationStatus.Ready, status);
+                Assert.AreEqual(MaterialPreparationStatus.Ready, BuiltInLutCache.GetOrBake(configs[i], out var texture, out _));
                 Assert.AreSame(textures[i], texture);
-                Assert.IsFalse(hitShouldReport);
             }
         }
 
         [Test]
-        public void ReadyLruIsGlobalAcrossRequests()
+        public void ReplacesTheLeastRecentlyUsedConfig()
         {
             AssumeLutBakingSupported();
-            var configs = new GTConfig[5];
-            var textures = new Texture2D[5];
-
-            for (var i = 0; i < 4; i++)
+            var configs = new GTConfig[BuiltInLutCache.Capacity + 1];
+            var textures = new Texture2D[configs.Length];
+            for (var i = 0; i < configs.Length; i++)
+                configs[i] = CreateConfig(i * 0.01f);
+            for (var i = 0; i < BuiltInLutCache.Capacity; i++)
             {
-                configs[i] = CreateConfig(i * 0.01f, i == 1 ? 33 : 32);
-                var status = BuiltInLutCache.GetOrBake(configs[i], out textures[i],
-                    out _, out _, out _);
-                Assert.AreEqual(MaterialPreparationStatus.Ready, status);
+                BuiltInLutCache.GetOrBake(configs[i], out textures[i], out _);
+                AdvanceFrames(1);
             }
 
-            var touchedStatus = BuiltInLutCache.GetOrBake(configs[0], out var touchedTexture,
-                out _, out _, out _);
-            Assert.AreEqual(MaterialPreparationStatus.Ready, touchedStatus);
-            Assert.AreSame(textures[0], touchedTexture);
+            // Touch the oldest, so the second oldest is the one replaced.
+            BuiltInLutCache.GetOrBake(configs[0], out _, out _);
+            AdvanceFrames(1);
+            BuiltInLutCache.GetOrBake(configs[BuiltInLutCache.Capacity], out _, out _);
 
-            configs[4] = CreateConfig(0.04f, 32);
-            var fifthStatus = BuiltInLutCache.GetOrBake(configs[4], out textures[4],
-                out _, out _, out _);
-            Assert.AreEqual(MaterialPreparationStatus.Ready, fifthStatus);
-
-            var reloadedStatus = BuiltInLutCache.GetOrBake(configs[1], out var reloadedTexture,
-                out _, out _, out _);
-            Assert.AreEqual(MaterialPreparationStatus.Ready, reloadedStatus);
-            Assert.AreNotSame(textures[1], reloadedTexture);
+            BuiltInLutCache.GetOrBake(configs[0], out var kept, out _);
+            Assert.AreSame(textures[0], kept);
+            BuiltInLutCache.GetOrBake(configs[1], out var rebaked, out _);
+            Assert.AreNotSame(textures[1], rebaked);
         }
 
         [Test]
-        public void ReadyLruIsGlobalAcrossMapperKinds()
+        public void ModesDoNotEvictEachOther()
         {
             AssumeLutBakingSupported();
-            var gt = CreateConfig(0.0f, 32);
-            var gt7 = CreateGT7Config(33);
-            var agx = CreateAgXConfig(32);
-            var gtSecond = CreateConfig(0.01f, 32);
+            BuiltInLutCache.GetOrBake(CreateGT7Config(32), out var gt7Texture, out _);
+            for (var i = 0; i <= BuiltInLutCache.Capacity; i++)
+                BuiltInLutCache.GetOrBake(CreateConfig(i * 0.01f), out _, out _);
 
-            Assert.AreEqual(MaterialPreparationStatus.Ready,
-                BuiltInLutCache.GetOrBake(gt, out _, out _, out _, out _));
-            Assert.AreEqual(MaterialPreparationStatus.Ready,
-                BuiltInLutCache.GetOrBake(gt7, out var gt7Texture, out _, out _, out _));
-            Assert.AreEqual(MaterialPreparationStatus.Ready,
-                BuiltInLutCache.GetOrBake(agx, out _, out _, out _, out _));
-            Assert.AreEqual(MaterialPreparationStatus.Ready,
-                BuiltInLutCache.GetOrBake(gtSecond, out _, out _, out _, out _));
-
-            Assert.AreEqual(MaterialPreparationStatus.Ready,
-                BuiltInLutCache.GetOrBake(gt, out _, out _, out _, out _));
-
-            var fifth = CreateConfig(0.02f, 32);
-            Assert.AreEqual(MaterialPreparationStatus.Ready,
-                BuiltInLutCache.GetOrBake(fifth, out _, out _, out _, out _));
-
-            Assert.AreEqual(MaterialPreparationStatus.Ready,
-                BuiltInLutCache.GetOrBake(gt7, out var reloadedGt7Texture,
-                    out _, out _, out _));
-            Assert.AreNotSame(gt7Texture, reloadedGt7Texture);
+            BuiltInLutCache.GetOrBake(CreateGT7Config(32), out var gt7Again, out _);
+            Assert.AreSame(gt7Texture, gt7Again);
         }
 
         [UnityTest]
@@ -183,8 +129,7 @@ namespace CustomToneMapping.Tests
         {
             AssumeLutBakingSupported();
             var config = CreateConfig(0.0f);
-            Assert.AreEqual(MaterialPreparationStatus.Ready,
-                BuiltInLutCache.GetOrBake(config, out _, out _, out _, out _));
+            Assert.AreEqual(MaterialPreparationStatus.Ready, BuiltInLutCache.GetOrBake(config, out _, out _));
 
             using (var recorder = ProfilerRecorder.StartNew(ProfilerCategory.Internal,
                        "CustomToneMapping.BakeLUT", 16))
@@ -197,8 +142,8 @@ namespace CustomToneMapping.Tests
                 var allReady = true;
                 for (var i = 0; i < 128; i++)
                 {
-                    if (BuiltInLutCache.GetOrBake(config, out _, out _, out _, out _) !=
-                        MaterialPreparationStatus.Ready)
+                    BuiltInLutCache.Tick(++_frameCount);
+                    if (BuiltInLutCache.GetOrBake(config, out _, out _) != MaterialPreparationStatus.Ready)
                         allReady = false;
                 }
 
@@ -214,157 +159,123 @@ namespace CustomToneMapping.Tests
         }
 
         [Test]
-        public void ClearDestroysCacheOwnedReadyLut()
+        public void ClearDestroysCacheOwnedLuts()
         {
             AssumeLutBakingSupported();
-            var status = BuiltInLutCache.GetOrBake(CreateConfig(0.0f), out var texture,
-                out _, out _, out _);
-            Assert.AreEqual(MaterialPreparationStatus.Ready, status);
+            BuiltInLutCache.GetOrBake(CreateConfig(0.0f), out var texture, out _);
             Assert.IsNotNull(texture);
 
             UrpBridge.ClearCache();
 
             Assert.IsTrue(texture == null);
+            Assert.IsNull(BuiltInLutCache.GetCachedLut(ToneMappingMode.GT));
         }
 
         [Test]
-        public void ReadyLutExpiresAfterTenUnusedFrames()
+        public void ExternallyDestroyedLutIsRebaked()
         {
             AssumeLutBakingSupported();
             var config = CreateConfig(0.0f);
-            var frame = Time.frameCount;
-            Assert.AreEqual(MaterialPreparationStatus.Ready,
-                BuiltInLutCache.GetOrBake(config, out var texture, out var sample, out _, out _));
+            BuiltInLutCache.GetOrBake(config, out var texture, out _);
+            UnityEngine.Object.DestroyImmediate(texture);
 
-            BuiltInLutCache.PurgeUnused(frame + 10);
+            Assert.IsNull(BuiltInLutCache.GetCachedLut(ToneMappingMode.GT));
+            Assert.AreEqual(MaterialPreparationStatus.Ready, BuiltInLutCache.GetOrBake(config, out var rebaked, out _));
+            Assert.IsTrue(rebaked != null);
+        }
+
+        [Test]
+        public void LutExpiresAfterItsStaleLifetime()
+        {
+            AssumeLutBakingSupported();
+            var config = CreateConfig(0.0f);
+            BuiltInLutCache.GetOrBake(config, out var texture, out _);
+
+            AdvanceFrames(BuiltInLutCache.StaleLifetimeFrames);
             Assert.IsTrue(texture != null);
-            Assert.AreSame(texture, BuiltInLutCache.CachedLutTexture);
+            Assert.AreSame(texture, BuiltInLutCache.GetCachedLut(ToneMappingMode.GT));
 
-            BuiltInLutCache.PurgeUnused(frame + 11);
+            AdvanceFrames(1);
             Assert.IsTrue(texture == null);
-            Assert.IsNull(BuiltInLutCache.CachedLutTexture);
+            Assert.IsNull(BuiltInLutCache.GetCachedLut(ToneMappingMode.GT));
 
-            Assert.AreEqual(MaterialPreparationStatus.Ready,
-                BuiltInLutCache.GetOrBake(config, out var replacement, out var newSample, out _, out _));
+            Assert.AreEqual(MaterialPreparationStatus.Ready, BuiltInLutCache.GetOrBake(config, out var replacement, out _));
             Assert.IsTrue(replacement != null);
-            Assert.AreNotSame(texture, replacement);
-            Assert.AreEqual(sample, newSample);
+        }
+
+        // Only frames that tone map call Tick. Repeated calls in one frame (several cameras) count once, so no number
+        // of calls ages an entry without frames passing.
+        [Test]
+        public void TicksWithinOneFrameCountOnce()
+        {
+            AssumeLutBakingSupported();
+            BuiltInLutCache.GetOrBake(CreateConfig(0.0f), out var texture, out _);
+            AdvanceFrames(BuiltInLutCache.StaleLifetimeFrames);
+            for (var i = 0; i < 10; i++)
+                BuiltInLutCache.Tick(_frameCount);
+
+            Assert.IsTrue(texture != null);
         }
 
         [Test]
-        public void ReadyHitRefreshesFrameAge()
+        public void UseRefreshesAge()
         {
             AssumeLutBakingSupported();
             var config = CreateConfig(0.0f);
-            BuiltInLutCache.GetOrBake(config, out var texture, out _, out _, out _);
-            AgeReadyLuts(10);
+            BuiltInLutCache.GetOrBake(config, out var texture, out _);
+            AdvanceFrames(BuiltInLutCache.StaleLifetimeFrames);
 
-            Assert.AreEqual(MaterialPreparationStatus.Ready,
-                BuiltInLutCache.GetOrBake(config, out var touched, out _, out _, out _));
-            BuiltInLutCache.PurgeUnused(Time.frameCount + 1);
+            BuiltInLutCache.GetOrBake(config, out var touched, out _);
+            AdvanceFrames(1);
 
             Assert.IsTrue(texture != null);
             Assert.AreSame(texture, touched);
-            Assert.AreSame(texture, BuiltInLutCache.CachedLutTexture);
         }
 
         [Test]
-        public void PurgePreservesRecentlyUsedLutsAcrossMapperKinds()
+        public void PurgeKeepsRecentlyUsedLutsOfEveryMode()
         {
             AssumeLutBakingSupported();
             var gt7 = CreateGT7Config(32);
-            BuiltInLutCache.GetOrBake(CreateConfig(0.0f), out var gtTexture, out _, out _, out _);
-            BuiltInLutCache.GetOrBake(gt7, out var gt7Texture, out _, out _, out _);
-            BuiltInLutCache.GetOrBake(CreateAgXConfig(32), out var agxTexture, out _, out _, out _);
-            AgeReadyLuts(11);
+            BuiltInLutCache.GetOrBake(CreateConfig(0.0f), out var gtTexture, out _);
+            BuiltInLutCache.GetOrBake(gt7, out var gt7Texture, out _);
+            BuiltInLutCache.GetOrBake(CreateAgXConfig(32), out var agxTexture, out _);
+            AdvanceFrames(BuiltInLutCache.StaleLifetimeFrames);
 
-            // Refresh an entry other than the last-slot shortcut.
-            Assert.AreEqual(MaterialPreparationStatus.Ready,
-                BuiltInLutCache.GetOrBake(gt7, out var touched, out _, out _, out _));
-            BuiltInLutCache.PurgeUnused(Time.frameCount);
+            BuiltInLutCache.GetOrBake(gt7, out _, out _);
+            AdvanceFrames(1);
 
             Assert.IsTrue(gtTexture == null);
             Assert.IsTrue(agxTexture == null);
             Assert.IsTrue(gt7Texture != null);
-            Assert.AreSame(gt7Texture, touched);
-            Assert.AreSame(gt7Texture, BuiltInLutCache.CachedLutTexture);
+            Assert.AreSame(gt7Texture, BuiltInLutCache.GetCachedLut(ToneMappingMode.GT7));
+            Assert.IsNull(BuiltInLutCache.GetCachedLut(ToneMappingMode.GT));
+            Assert.IsNull(BuiltInLutCache.GetCachedLut(ToneMappingMode.AgX));
         }
 
-        [TestCase(false)]
-        [TestCase(true)]
-        public void EndContextCleanupRemainsRegisteredAfterClear(bool exitingPlayMode)
+        // The ACES 2.0 LDR strip is too slow to rebake after a mode switch, so aging keeps the most recent one. Strips
+        // of other LUT sizes still expire, so trying sizes does not pile them up.
+        [Test]
+        public void AgingKeepsOnlyTheMostRecentLdrStrip()
         {
             AssumeLutBakingSupported();
-            BuiltInLutCache.GetOrBake(CreateConfig(0.0f), out _, out _, out _, out _);
-            if (exitingPlayMode)
-                ((Action)GetCacheSubscriber(typeof(Application), "quitting"))();
-            else
-                UrpBridge.ClearCache();
-            BuiltInLutCache.GetOrBake(CreateConfig(0.0f), out var texture, out _, out _, out _);
-            AgeReadyLuts(11);
+            BuiltInLutCache.GetOrBakeAces2Strip(32, out var older, out _);
+            AdvanceFrames(1);
+            BuiltInLutCache.GetOrBakeAces2Strip(33, out var current, out _);
+            AdvanceFrames(BuiltInLutCache.StaleLifetimeFrames * 2);
 
-            // Invoke only this cache's registered subscriber, without rendering or
-            // calling unrelated subscribers with a synthetic render context.
-            var cleanup = (Action<ScriptableRenderContext, List<Camera>>)
-                GetCacheSubscriber(typeof(RenderPipelineManager), "endContextRendering");
-            cleanup(default, null);
-
-            Assert.IsTrue(texture == null, "Cleanup must not require another LUT request.");
-            Assert.IsNull(BuiltInLutCache.CachedLutTexture);
+            Assert.IsTrue(older == null);
+            Assert.IsTrue(current != null);
+            Assert.AreSame(current, BuiltInLutCache.GetCachedLut(ToneMappingMode.ACES2));
         }
 
         [Test]
-        public void PurgeDoesNotResetFailureSuppression()
+        public void PersistentFailureIsLoggedOnce()
         {
-            AssumeLutBakingSupported();
-            BuiltInLutCache.GetOrBake(CreateConfig(0.0f), out var texture, out _, out _, out _);
-            var invalid = CreateConfig(0.0f);
-            invalid.Contrast = float.NaN;
-            BuiltInLutCache.GetOrBake(invalid, out _, out _, out var error, out var shouldReport);
-            Assert.IsTrue(shouldReport);
-
-            BuiltInLutCache.PurgeUnused(Time.frameCount + 11);
-            Assert.IsTrue(texture == null);
-            Assert.AreEqual(MaterialPreparationStatus.Invalid,
-                BuiltInLutCache.GetOrBake(invalid, out _, out _, out var repeatedError, out shouldReport));
-            Assert.AreEqual(error, repeatedError);
-            Assert.IsFalse(shouldReport);
-        }
-
-        private static Delegate GetCacheSubscriber(Type eventOwner, string eventName)
-        {
-            var callbacks = (Delegate)eventOwner
-                .GetField(eventName, BindingFlags.Static | BindingFlags.NonPublic)
-                ?.GetValue(null);
-            Assert.IsNotNull(callbacks);
-            Delegate subscriber = null;
-            foreach (var callback in callbacks.GetInvocationList())
-            {
-                if (callback.Method.DeclaringType != typeof(BuiltInLutCache))
-                    continue;
-
-                Assert.IsNull(subscriber, "Cache cleanup must be registered only once.");
-                subscriber = callback;
-            }
-
-            Assert.IsNotNull(subscriber);
-            return subscriber;
-        }
-
-        private static void AgeReadyLuts(int frames)
-        {
-            // Edit-mode frame advancement depends on editor rendering. Age the
-            // stored timestamps instead of adding a test clock to the runtime.
-            var entries = (Array)typeof(BuiltInLutCache)
-                .GetField("ReadyEntries", BindingFlags.Static | BindingFlags.NonPublic)
-                .GetValue(null);
-            var frameField = entries.GetType().GetElementType().GetField("LastUsedFrame");
-            for (var i = 0; i < entries.Length; i++)
-            {
-                var entry = entries.GetValue(i);
-                frameField.SetValue(entry, unchecked(Time.frameCount - frames));
-                entries.SetValue(entry, i);
-            }
+            LogAssert.Expect(LogType.Warning, "Custom tone mapping disabled for GT: bad contrast.");
+            UrpBridge.LogFailure(ToneMappingMode.GT, MaterialPreparationStatus.Invalid, "bad contrast");
+            UrpBridge.LogFailure(ToneMappingMode.GT, MaterialPreparationStatus.Invalid, "bad contrast");
+            LogAssert.NoUnexpectedReceived();
         }
 
         private static GTConfig CreateConfig(float blackOffset, int lutSize = 32)

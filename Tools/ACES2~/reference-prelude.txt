@@ -1,0 +1,50 @@
+using System;
+using static System.Math;
+using Unity.Collections;
+using Unity.Mathematics;
+namespace CustomToneMapping.Baker.ACES2
+{
+// Types: CTL float[3] is double3, float[2] is double2, and float[3][3] is double3x3 with CTL row i stored in
+// column i, so m[i][j] reads the same as in the CTL. Larger tables are NativeArray (Allocator.Temp). Nothing
+// allocates managed memory, so the whole file compiles under Burst, which supports System.Math on doubles.
+internal static class AcademyTransform
+{
+    internal struct Chromaticities
+    {
+        internal double2 red, green, blue, white;
+    }
+    // The limiting displays the package bakes for, all D65.
+    internal static readonly Chromaticities Rec709Primaries = new Chromaticities {red=new double2(.64, .33), green=new double2(.30, .60), blue=new double2(.15, .06), white=new double2(.3127, .3290)};
+    internal static readonly Chromaticities Rec2020Primaries = new Chromaticities {red=new double2(.708, .292), green=new double2(.170, .797), blue=new double2(.131, .046), white=new double2(.3127, .3290)};
+    static NativeArray<T> Copy<T>(NativeArray<T> v) where T : struct
+    {
+        var r = new NativeArray<T>(v.Length, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+        r.CopyFrom(v);
+        return r;
+    }
+    static double3 With(double3 v, int i, double x) { v[i] = x; return v; }
+    const double PI = Math.PI;
+    const double M_PI = Math.PI;
+    const double HALF_POS_INF = double.PositiveInfinity;
+    const double HALF_NEG_INF = double.NegativeInfinity;
+    static double pow(double a, double b) => Pow(a,b);
+    static double pow10(double a) => Pow(10,a);
+    static double sqrt(double a) => Sqrt(a);
+    static double log(double a) => Log(a);
+    static double log10(double a) => Log10(a);
+    static double exp(double a) => Exp(a);
+    static double fabs(double a) => Abs(a);
+    static double floor(double a) => Floor(a);
+    static double cos(double a) => Cos(a);
+    static double sin(double a) => Sin(a);
+    static double atan2(double a, double b) => Atan2(a,b);
+    static double fmod(double a, double b) => a%b;
+    static int min(int a, int b) => Math.Min(a,b);
+    static int max(int a, int b) => Math.Max(a,b);
+    static double3 mult_f_f3(double s, double3 v) => s*v;
+    // Row vector times matrix; with CTL rows stored as columns that is math.mul(m, v).
+    static double3 mult_f3_f33(double3 v, double3x3 m) => math.mul(m, v);
+    // CTL a*b with rows stored as columns is math.mul(b, a).
+    static double3x3 mult_f33_f33(double3x3 a, double3x3 b) => math.mul(b, a);
+    static double3x3 mult_f_f33(double s, double3x3 m) => s*m;
+    static double3x3 invert_f33(double3x3 m) => math.inverse(m);

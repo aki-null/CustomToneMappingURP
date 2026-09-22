@@ -2,7 +2,7 @@ using System;
 
 namespace CustomToneMapping.Baker.AgX
 {
-    public struct AgXConfig : ILutConfig, IEquatable<AgXConfig>
+    public struct AgXConfig : ILutConfig, IStripLutConfig, IEquatable<AgXConfig>
     {
         public float HdrMaxNits;
         public float SdrMaxNits;
@@ -13,35 +13,13 @@ namespace CustomToneMapping.Baker.AgX
 
         public AgXLookConfig LookConfig;
 
-        public uint ConfigHash
-        {
-            get
-            {
-                var h = HashUtil.Fnv1A32Offset;
-                h = HashUtil.Hash32(h, 2u); // tone map type: AgX
-                h = HashUtil.Hash32(h, IsHdrOutput ? 1u : 0u);
-                h = HashUtil.Hash32(h, HdrMaxNits);
-                h = HashUtil.Hash32(h, SdrMaxNits);
-                h = HashUtil.Hash32(h, HdrPurity);
-                h = HashUtil.Hash32(h, HdrExtraPowerFactor);
-                h = HashUtil.Hash32(h, UseP3Limit ? 1u : 0u);
-                h = HashUtil.Hash32(h, (int)LookConfig.LookPreset);
-                h = HashUtil.Hash32(h, LookConfig.Intensity);
-                h = HashUtil.Hash32(h, LutSize);
-                return h;
-            }
-        }
-
         public bool IsHdrOutput { get; set; }
         public int LutSize { get; set; }
 
         public bool TryValidate(out string error)
         {
-            if (!LutLayout.IsValidSize(LutSize))
-            {
-                error = $"LUT size must be between {LutLayout.MinSize} and {LutLayout.MaxSize}.";
+            if (!LutLayout.TryValidateSize(LutSize, out error))
                 return false;
-            }
 
             if (!ValidationPrimitives.IsFinite(HdrMaxNits) ||
                 !ValidationPrimitives.IsFinite(SdrMaxNits) ||
@@ -72,6 +50,9 @@ namespace CustomToneMapping.Baker.AgX
             error = null;
             return true;
         }
+
+        bool IStripLutConfig.HdrOutput => IsHdrOutput;
+        void IStripLutConfig.BakeStripLut(ref UnityEngine.Texture2D texture) => AgXLutBaker.BakeStripLut(this, ref texture);
 
         public bool Equals(AgXConfig other)
         {

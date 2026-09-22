@@ -39,7 +39,7 @@ namespace CustomToneMapping.URP.Editor
             if (_mode == null)
                 return;
 
-            SetupValidator.DrawSetupValidation();
+            SetupValidator.DrawSetupValidation(target as VolumeComponent);
 
             DrawModeSelection();
 
@@ -125,8 +125,8 @@ namespace CustomToneMapping.URP.Editor
         {
             var currentMode = (ToneMappingMode)_mode.value.intValue;
 
-            // Only show LUT size for baked tone mapping modes
-            // CustomLUT uses the actual texture dimensions
+            // Show LUT Size only for modes that bake a LUT. Custom LUT uses the texture's own size. ACES 2.0 only
+            // uses it for its LDR strip (URP customization).
             if (currentMode != ToneMappingMode.None && currentMode != ToneMappingMode.CustomLUT)
             {
                 PropertyField(_lutSize);
@@ -134,7 +134,8 @@ namespace CustomToneMapping.URP.Editor
 
             // Debug export section
             var lutTexture = _lutTexture.value.objectReferenceValue as Texture2D;
-            LutExporter.DrawDebugExportSection(currentMode, lutTexture);
+            if (currentMode != ToneMappingMode.ACES2)
+                LutExporter.DrawDebugExportSection(currentMode, lutTexture);
         }
     }
 }

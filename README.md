@@ -6,30 +6,30 @@ This package extends URP by adding custom tone mapping algorithms, providing mor
 
 _GT7 Tone Mapping Sample_
 
-Since adding new tone mapping functions to URP is not officially supported through Unity's API, integration requires either URP modifications or a renderer feature. Please see the [Integration Guide](#integration-guide) for details
+Since adding new tone mapping functions to URP is not officially supported through Unity's API, integration requires either URP modifications or a renderer feature. Please see the [Integration Guide](#integration-guide) for details.
 
 ## Table of Contents
 
 - [Features](#features)
 - [Prerequisites](#prerequisites)
-- [Compatibility and Performance](#compatibility-and-performance)
 - [Installation](#installation)
-- [Technical Details](#technical-details)
-  - [Pipeline Ordering](#pipeline-ordering)
 - [Usage](#usage)
 - [Modes](#modes)
   - [GT Tone Mapping](#gt-tone-mapping)
   - [GT7 Tone Mapping](#gt7-tone-mapping)
   - [AgX](#agx)
+  - [ACES 2.0](#aces-20)
   - [Custom LUT](#custom-lut)
 - [Integration Guide](#integration-guide)
   - [Method 1: Renderer Feature](#method-1-renderer-feature-no-urp-modification)
   - [Method 2: URP Package Modification](#method-2-urp-package-modification-recommended)
+  - [Upgrading the URP customization](#upgrading-the-urp-customization)
+- [Technical Details](#technical-details)
 - [License](#license)
 
 ## Features
 
-* Additional tone mapping algorithms
+* Additional tone mapping algorithms: GT, GT7, AgX and ACES 2.0
 * HDR display output compatibility
     * Runtime LUT generation supports variable peak brightness configurations
 * Custom LUT support
@@ -80,7 +80,7 @@ Alternatively, add it to your `Packages/manifest.json`:
    - Set to **Custom** when using the URP modification method
 2. Add a **Custom Tone Mapping** volume component and select a mode
 3. Add the mode-specific volume component to configure parameters
-   - Each mode requires its own dedicated volume component (e.g., **GT Tone Mapping**, **GT7 Tone Mapping**, **AgX Tone Mapping**, etc.)
+   - Each mode requires its own dedicated volume component (e.g., **GT Tone Mapping**, **GT7 Tone Mapping**, **AgX Tone Mapping**, **ACES 2.0 Tone Mapping**)
 
 ## Modes
 
@@ -102,9 +102,15 @@ Designed by [Troy Sobotka](https://github.com/sobotka). The LUT generation is ba
 
 <img width="510" alt="AgX Tone Mapping Inspector" src="https://github.com/user-attachments/assets/b80e555b-f1e7-4536-9dac-6138ae04e201" />
 
+### ACES 2.0
+
+The Academy [ACES 2.0](https://github.com/aces-aswf/aces-core) Output Transform.
+
+- **ACES-aware grading** (on by default) grades in ACEScc/ACEScg, like URP's own ACES. It needs Method 2 with HDR Color Grading. Otherwise ACES 2.0 grades in URP's standard spaces, which looks different, and the inspector shows a notice.
+
 ### Custom LUT
 
-When Custom LUT is selected, assign a 2D Alexa LogC El1000 LUT strip in the Custom Tone Mapping component. For an `N`³ LUT, use an `N² × N` strip; the inspector can repair the import settings.
+When Custom LUT is selected, assign a 2D Alexa LogC EI 1000 LUT strip in the Custom Tone Mapping component. For an `N`³ LUT, use an `N² × N` strip; the inspector can repair the import settings.
 
 Custom LUT mode uses a static LUT and does not support variable peak brightness like the baked modes.
 
@@ -118,22 +124,24 @@ The Custom Tone Mapping Renderer Feature enables custom tone mapping without mod
 - Maintaining easier Unity version upgrades
 
 #### Limitations
-- Incompatible with LDR color grading
+- Requires HDR and HDR Color Grading in the URP Asset. Cameras that grade in LDR are not tone mapped. HDR display output always grades in HDR.
+- ACES 2.0 always grades in URP's standard spaces.
 - Less efficient than native integration due to additional rendering pass overhead
 
 #### Setup
 1. Add **Custom Tone Mapping Renderer Feature** to your Universal Renderer Data
-2. Set URP's Tonemapping mode to **None** in your Volume Profile
-3. Add a **Custom Tone Mapping** volume component and select a mode
-4. Add the mode-specific volume component to configure parameters
-   - Each mode requires its own dedicated volume component (e.g., **GT Tone Mapping**, **GT7 Tone Mapping**, **AgX Tone Mapping**, etc.)
+2. Follow [Usage](#usage), with URP's Tonemapping mode set to **None**
 
-#### Technical Details
+#### How it works
 The renderer feature injects a tone mapping pass into the render pipeline by intercepting the color grading LUT after URP's LUT generation pass and applying custom tone mapping. This approach provides better integration with the pipeline compared to directly tone mapping the framebuffer.
 
 ### Method 2: URP Package Modification (Recommended)
 
-Modifying the URP package provides native integration with optimal performance and full compatibility with all URP features.
+Modifying the URP package gives native integration with the best performance.
+
+- Supports both HDR and LDR Color Grading.
+- In Compatibility Mode, only HDR Color Grading is supported.
+- Customizations made before 1.3: see [Upgrading the URP customization](#upgrading-the-urp-customization).
 
 #### 1. Add Assembly Reference
 
@@ -185,11 +193,12 @@ Add the custom tonemapper assembly reference to the `references` array:
          /// It is more contrasted than Neutral and has an effect on actual color hue and saturation.
          /// Note that if you use this tonemapper all the grading operations will be done in the ACES color spaces for optimal precision and results.
          /// </summary>
--        ACES // ACES Filmic reference tonemapper (custom approximation)
-+        ACES, // ACES Filmic reference tonemapper (custom approximation)
+         ACES, // ACES Filmic reference tonemapper (custom approximation)
 +        Custom
-    }
+     }
 ```
+
+If your URP version has no comma after `ACES`, add one.
 
 #### 3. Update UberPost Shader
 
@@ -198,7 +207,9 @@ Add the custom tonemapper assembly reference to the `references` array:
 **Around line 7:**
 ```diff
  HLSLINCLUDE
-     #pragma exclude_renderers gles
+     #pragma multi_compile_local_fragment _ _DISTORTION
+     #pragma multi_compile_local_fragment _ _CHROMATIC_ABERRATION
+     #pragma multi_compile_local_fragment _ _BLOOM_LQ _BLOOM_HQ _BLOOM_LQ_DIRT _BLOOM_HQ_DIRT
 -    #pragma multi_compile_local_fragment _ _HDR_GRADING _TONEMAP_ACES _TONEMAP_NEUTRAL
 +    #pragma multi_compile_local_fragment _ _HDR_GRADING _TONEMAP_ACES _TONEMAP_NEUTRAL _TONEMAP_CUSTOM
      #pragma multi_compile_local_fragment _ _FILM_GRAIN
@@ -225,6 +236,7 @@ Add the custom tonemapper assembly reference to the `references` array:
      HLSLINCLUDE
 -        #pragma multi_compile_local _ _TONEMAP_ACES _TONEMAP_NEUTRAL
 +        #pragma multi_compile_local _ _TONEMAP_ACES _TONEMAP_NEUTRAL _TONEMAP_CUSTOM
++        #pragma multi_compile_local_fragment _ _CUSTOM_TONEMAP_ACES2
          #pragma multi_compile_local_fragment _ HDR_COLORSPACE_CONVERSION
 
          #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
@@ -237,7 +249,7 @@ Add the custom tonemapper assembly reference to the `references` array:
  #endif
 ```
 
-**Around line 202:**
+**Around line 189:**
 ```diff
          float3 Tonemap(float3 colorLinear)
          {
@@ -278,7 +290,7 @@ Add the custom tonemapper assembly reference to the `references` array:
          }
 ```
 
-#### 5. Update Common Shader Inlcude
+#### 5. Update Common Shader Include
 
 **File**: `Packages/com.unity.render-pipelines.universal/Shaders/PostProcessing/Common.hlsl`
 
@@ -304,12 +316,12 @@ Add the custom tonemapper assembly reference to the `references` array:
 
 **File**: `Packages/com.unity.render-pipelines.universal/Runtime/Passes/PostProcessPassRenderGraph.cs`
 
-**Around line 1922 in RenderUberPost method:**
+**Around line 2580 in RenderUberPost method (the LDR grading path):**
 ```diff
                          switch (data.toneMappingMode)
                          {
-                             case TonemappingMode.Neutral: material.EnableKeyword(ShaderKeywordStrings.TonemapNeutral); break;
-                             case TonemappingMode.ACES: material.EnableKeyword(ShaderKeywordStrings.TonemapACES); break;
+                             case TonemappingMode.Neutral: CoreUtils.SetKeyword(material, ShaderKeywordStrings.TonemapNeutral, true); break;
+                             case TonemappingMode.ACES: CoreUtils.SetKeyword(material, ShaderKeywordStrings.TonemapACES, true); break;
 +                            case TonemappingMode.Custom: CustomToneMapping.URP.UrpBridge.PrepareMaterial(material, data.cameraData.isHDROutputActive ? data.cameraData.hdrDisplayInformation : null); break;
                              default: break; // None
                          }
@@ -317,7 +329,7 @@ Add the custom tonemapper assembly reference to the `references` array:
 
 **File**: `Packages/com.unity.render-pipelines.universal/Runtime/Passes/ColorGradingLutPass.cs`
 
-**Around line 250 in ExecutePass method:**
+**Around line 259 in ExecutePass method (the HDR grading path):**
 ```diff
                      switch (tonemapping.mode.value)
                      {
@@ -328,17 +340,17 @@ Add the custom tonemapper assembly reference to the `references` array:
                      }
 ```
 
+### Upgrading the URP customization
+
+Customizations made before 1.3 keep working, and ACES 2.0 grades in standard spaces with them. For ACES-aware grading, add the `_CUSTOM_TONEMAP_ACES2` pragma from [step 4](#4-update-lutbuilderhdr-shader) to `LutBuilderHdr.shader`. No other change is needed.
 
 ## Technical Details
 
-Tone mapping curves are baked into a 3D LUT on the CPU. The GPU samples this LUT during URP color grading, avoiding the cost of evaluating the complete tone mapping curve for every screen pixel. The LUT is rebuilt when its settings change.
+GT, GT7, AgX and the ACES 2.0 LDR path are baked into a 3D LUT on the CPU when settings change. The GPU samples it during URP color grading.
 
-The LUT uses a 2D `N² × N` texture layout and ARRI LogC3 EI 1000 input encoding. LogC distributes samples across a wide linear-light range while preserving useful precision in shadows. The LUT size setting controls the quality, baking cost, and memory tradeoff.
+The LUT uses a 2D `N² × N` texture layout and ARRI LogC3 EI 1000 input encoding. The LUT size setting controls the quality, baking cost, and memory tradeoff.
 
-Tone mapping must remain part of URP's color grading stage so bloom, color grading, film grain, dithering, and output conversion run in the expected order. The two integration methods preserve this ordering differently:
-
-- The renderer feature transforms URP's generated color grading LUT without modifying URP files. It requires HDR color grading and adds a LUT-processing pass.
-- The URP modification integrates custom tone mapping directly into URP's LUT and post-processing shaders. It supports both HDR and LDR color grading and avoids the extra renderer-feature pass.
+Tone mapping stays inside URP's color grading stage, so bloom, grading, film grain, dithering and output conversion run in URP's order.
 
 ## License
 

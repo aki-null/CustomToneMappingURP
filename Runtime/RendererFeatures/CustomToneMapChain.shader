@@ -74,11 +74,12 @@ Shader "Hidden/CustomToneMapChain"
                 #if defined(HDR_COLORSPACE_CONVERSION)
                 // HDR Display Output: Reverse URP's HDR processing
                 // The internal LUT contains colors that have been rotated to output space and scaled by paper white
-                half3 colorLinear = ReverseHDRProcessing(color);
+                float3 colorLinear = ReverseHDRProcessing(color);
                 #include "Packages/net.aki-null.tonemapping/Runtime/URP/Shaders/TonemapHdr.hlsl"
+                return colorLinear;
                 #else
                 // SDR Output
-                half3 colorLinear = color;
+                float3 colorLinear = color;
                 #include "Packages/net.aki-null.tonemapping/Runtime/URP/Shaders/Tonemap.hlsl"
                 return colorLinear;
                 #endif

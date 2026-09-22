@@ -16,7 +16,9 @@ namespace CustomToneMapping.URP.RendererFeatures
         public override void Create()
         {
             _pass?.Dispose();
-            _pass = new CustomToneMappingPass(shader)
+            // The serialized [Reload] reference is filled in for imported renderer assets. Features created at runtime
+            // (tests, scripts) fall back to Shader.Find.
+            _pass = new CustomToneMappingPass(shader != null ? shader : Shader.Find("Hidden/CustomToneMapChain"))
             {
                 renderPassEvent = RenderPassEvent.BeforeRenderingPrePasses + 1
             };
@@ -27,10 +29,14 @@ namespace CustomToneMapping.URP.RendererFeatures
             if (!renderingData.cameraData.postProcessEnabled)
                 return;
 
+            // A post-processed camera counts as a frame that ages the LUT cache, even with mode None, so unused LUTs
+            // still expire.
+            BuiltInLutCache.Tick();
             var customToneMapping = VolumeManager.instance?.stack?.GetComponent<CustomToneMapping>();
             if (customToneMapping == null || customToneMapping.mode.value == ToneMappingMode.None)
                 return;
 
+            // The pass checks the camera's grading mode: HDR output makes URP grade in HDR whatever the asset says.
             renderer.EnqueuePass(_pass);
         }
 

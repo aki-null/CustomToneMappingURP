@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- ACES 2.0 Output Transform (Academy aces-core 069b0bc), SDR and HDR, through both integration methods
+- ACES-aware grading for ACES 2.0 through the URP customization, via one optional `_CUSTOM_TONEMAP_ACES2` pragma. Existing customizations work without it. Inspector and console notices explain when it is inactive.
+
+### Changed
+- The Renderer Feature no longer tone maps cameras that grade in LDR, in every mode. Cameras outputting to an HDR display are unaffected.
+- `UrpBridge.CachedLutTexture` is obsolete. Use `UrpBridge.GetCachedLut(mode)`.
+- Baked LUTs are no longer evicted by switching modes, or expired by frames where only cameras without post-processing (such as UI cameras) render
+- Peak luminance (GT and GT7 **Target Peak Nits**, AgX **Max Nits**) no longer blends between volumes.
+
+### Fixed
+- GT, GT7 and AgX fall back to their manual peak luminance when peak detection is on but the display reports no peak. Tone mapping used to turn off.
+
 ## 1.2.6 - 2026-09-23
 
 ### Fixed
