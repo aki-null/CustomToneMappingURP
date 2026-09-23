@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.6 - 2026-09-23
+
+### Fixed
+- Unity 6000.6 compile error from obsolete `Object.GetInstanceID()` in custom LUT caching ([#6](https://github.com/aki-null/CustomToneMappingURP/issues/6))
+
 ## 1.2.5 - 2026-09-06
 
 ### Fixed
