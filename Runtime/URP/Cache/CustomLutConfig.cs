@@ -6,7 +6,7 @@ namespace CustomToneMapping.URP
     internal readonly struct CustomLutConfig
     {
         internal readonly Texture2D Texture;
-        private readonly int _instanceId;
+        private readonly bool _wasAlive;
         private readonly int _width;
         private readonly int _height;
         internal readonly Vector3 SampleParams;
@@ -14,7 +14,7 @@ namespace CustomToneMapping.URP
         private CustomLutConfig(Texture2D texture)
         {
             Texture = texture;
-            _instanceId = texture == null ? 0 : texture.GetInstanceID();
+            _wasAlive = texture != null;
             _width = texture == null ? 0 : texture.width;
             _height = texture == null ? 0 : texture.height;
             SampleParams = texture == null
@@ -41,10 +41,12 @@ namespace CustomToneMapping.URP
             if (!ReferenceEquals(Texture, texture))
                 return false;
 
+            // A config captured from a live texture must not match once that
+            // texture is destroyed, so the cache revalidates and reports it.
             if (texture == null)
-                return _instanceId == 0 && _width == 0 && _height == 0;
+                return !_wasAlive;
 
-            return _instanceId == texture.GetInstanceID() &&
+            return _wasAlive &&
                    _width == texture.width &&
                    _height == texture.height;
         }
