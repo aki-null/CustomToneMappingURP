@@ -116,7 +116,7 @@ The Custom Tone Mapping Renderer Feature enables custom tone mapping without mod
 - Maintaining easier Unity version upgrades
 
 #### Limitations
-- Incompatible with LDR color grading
+- Requires HDR and HDR Color Grading in the URP Asset. Cameras that grade in LDR are not tone mapped. HDR display output always grades in HDR.
 - Less efficient than native integration due to additional rendering pass overhead
 
 #### Setup

@@ -20,7 +20,35 @@ namespace CustomToneMapping.URP.Editor
             public ToneMappingMode CustomToneMappingMode;
         }
 
-        private static SetupStatus GetSetupStatus()
+        // The inspector describes the profile being edited. VolumeManager's resolved stack reflects whichever
+        // profile is active, so reading it would hide every message while an inactive profile is edited, and could
+        // show warnings for another profile's mode.
+        internal static VolumeProfile OwningProfile(VolumeComponent inspected)
+        {
+            if (inspected == null)
+                return null;
+            var path = AssetDatabase.GetAssetPath(inspected);
+            return string.IsNullOrEmpty(path) ? null : AssetDatabase.LoadAssetAtPath<VolumeProfile>(path);
+        }
+
+        // Use the edited profile. When it lacks the component, another volume supplies the value, so use the stack. A
+        // profile created at runtime has no asset path and also uses the stack.
+        private static T Resolve<T>(VolumeProfile profile) where T : VolumeComponent
+        {
+            if (profile != null && profile.TryGet<T>(out var fromProfile))
+                return fromProfile;
+            try
+            {
+                return VolumeManager.instance.stack?.GetComponent<T>();
+            }
+            catch (System.Exception)
+            {
+                // The volume stack may not be initialized in edit mode.
+                return null;
+            }
+        }
+
+        private static SetupStatus GetSetupStatus(VolumeProfile profile)
         {
             var status = new SetupStatus
             {
@@ -28,29 +56,13 @@ namespace CustomToneMapping.URP.Editor
                 HasUrpModification = HasUrpCustomToneMappingIntegration()
             };
 
-            try
-            {
-                var stack = VolumeManager.instance.stack;
-                if (stack != null)
-                {
-                    var tonemapping = stack.GetComponent<Tonemapping>();
-                    if (tonemapping != null && tonemapping.mode != null)
-                    {
-                        status.TonemappingMode = tonemapping.mode.value;
-                    }
+            var tonemapping = Resolve<Tonemapping>(profile);
+            if (tonemapping != null && tonemapping.mode != null)
+                status.TonemappingMode = tonemapping.mode.value;
 
-                    var customTonemapping = stack.GetComponent<CustomToneMapping>();
-                    if (customTonemapping != null && customTonemapping.mode != null)
-                    {
-                        status.CustomToneMappingMode = customTonemapping.mode.value;
-                    }
-                }
-            }
-            catch (System.Exception)
-            {
-                // Ignore exceptions during volume stack access in edit mode
-                // Volume stack might not be properly initialized
-            }
+            var customTonemapping = Resolve<CustomToneMapping>(profile);
+            if (customTonemapping != null && customTonemapping.mode != null)
+                status.CustomToneMappingMode = customTonemapping.mode.value;
 
             // Check if renderer feature is set up
             status.HasRendererFeature = HasCustomTonemapperRendererFeature();
@@ -58,9 +70,10 @@ namespace CustomToneMapping.URP.Editor
             return status;
         }
 
-        internal static void DrawSetupValidation()
+        internal static void DrawSetupValidation(VolumeComponent inspected)
         {
-            var setupStatus = GetSetupStatus();
+            var profile = OwningProfile(inspected);
+            var setupStatus = GetSetupStatus(profile);
 
             if (setupStatus.CustomToneMappingMode == ToneMappingMode.None)
                 return;
@@ -105,8 +118,23 @@ namespace CustomToneMapping.URP.Editor
                         MessageType.Warning);
                     EditorGUILayout.Space();
                 }
+                else if (GradesInLdr())
+                {
+                    EditorGUILayout.HelpBox(
+                        "Custom tone mapping is off: the URP Asset grades in LDR, and the Renderer Feature works only with HDR grading. " +
+                        "Cameras that output to an HDR display are still tone mapped, because URP grades them in HDR.\n\n" +
+                        "Enable HDR and HDR Color Grading in the URP Asset, or customize URP to support LDR grading (README, Method 2).",
+                        MessageType.Error);
+                    EditorGUILayout.Space();
+                }
             }
         }
+
+        // What the asset selects. URP still grades a camera in HDR when it outputs to an HDR display
+        // (UniversalRenderPipeline.CreatePostProcessingData), which an edit-time check cannot know.
+        private static bool GradesInLdr() =>
+            GraphicsSettings.currentRenderPipeline is UniversalRenderPipelineAsset asset &&
+            (asset.colorGradingMode != ColorGradingMode.HighDynamicRange || !asset.supportsHDR);
 
         private static bool HasUrpCustomToneMappingIntegration()
         {

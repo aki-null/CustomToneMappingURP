@@ -34,6 +34,7 @@ namespace CustomToneMapping.URP.RendererFeatures
             if (customToneMapping == null || customToneMapping.mode.value == ToneMappingMode.None)
                 return;
 
+            // The pass checks the camera's grading mode: HDR output makes URP grade in HDR whatever the asset says.
             renderer.EnqueuePass(_pass);
         }
 

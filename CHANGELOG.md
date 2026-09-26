@@ -4,6 +4,7 @@
 
 ### Changed
 - A failed LUT bake is retried, with a growing wait, instead of staying off until play mode changes
+- The Renderer Feature no longer tone maps cameras that grade in LDR, in every mode. Cameras outputting to an HDR display are unaffected.
 - Baked LUTs are no longer evicted by switching modes, or expired by frames where only cameras without post-processing (such as UI cameras) render
 - Peak luminance (GT and GT7 **Target Peak Nits**, AgX **Max Nits**) no longer blends between volumes.
 

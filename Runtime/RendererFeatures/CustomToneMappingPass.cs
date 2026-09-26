@@ -52,6 +52,9 @@ namespace CustomToneMapping.URP.RendererFeatures
                 return;
 
             var resourceData = frameData.Get<UniversalResourceData>();
+            // Per camera: HDR output switches URP to HDR grading even when the asset is set to LDR.
+            var postProcessingData = frameData.Get<UniversalPostProcessingData>();
+            if (postProcessingData.gradingMode != ColorGradingMode.HighDynamicRange) return;
 
             if (!resourceData.internalColorLut.IsValid()) return;
 
@@ -187,6 +190,7 @@ namespace CustomToneMapping.URP.RendererFeatures
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
         {
             if (_material == null) return;
+            if (renderingData.postProcessingData.gradingMode != ColorGradingMode.HighDynamicRange) return;
 
             // Prevent double tonemapping
             var tonemapping = VolumeManager.instance.stack.GetComponent<Tonemapping>();

@@ -39,7 +39,7 @@ namespace CustomToneMapping.URP.Editor
             if (_mode == null)
                 return;
 
-            SetupValidator.DrawSetupValidation();
+            SetupValidator.DrawSetupValidation(target as VolumeComponent);
 
             DrawModeSelection();
 
