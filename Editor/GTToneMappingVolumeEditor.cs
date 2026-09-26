@@ -130,11 +130,11 @@ namespace CustomToneMapping.URP.Editor
                 return;
 
             var config = BuildPreviewConfig();
-            var previewPeak = _previewHdr ? _previewPeakNits : config.SdrPaperWhite;
-            config.TargetPeakNits = previewPeak;
+            config.TargetPeakNits = _previewHdr ? _previewPeakNits : config.SdrPaperWhite;
             config.IsHdrOutput = _previewHdr;
+            config.PaperWhiteNits = SetupValidator.PaperWhite(target as VolumeComponent);
 
-            GTCurvePreview.DrawCurvePreview(rect, config, previewPeak, _previewHdr);
+            GTCurvePreview.DrawCurvePreview(rect, config);
         }
 
         private GTConfig BuildPreviewConfig()

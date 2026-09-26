@@ -18,40 +18,42 @@ namespace CustomToneMapping.URP.Editor
         private static readonly Color ClippingLineColor = new(1.0f, 1.0f, 1.0f);
         private static readonly Color InvalidCurveColor = new(1.0f, 0.6f, 0.6f);
 
-        public static void DrawCurvePreview(Rect rect, GT7Config config, float targetPeakNits, bool isHdr)
+        public static void DrawCurvePreview(Rect rect, GT7Config config)
         {
+            var isHdr = config.IsHdrOutput;
             var graphRect = GTCurveDrawing.CreateGraphRect(rect);
             GTCurveDrawing.DrawBackground(graphRect);
 
-            var peakIntensity = targetPeakNits / config.ReferenceLuminance;
+            // The y axis is the baked value: SDR white is 1, the HDR peak is peak / paper white.
+            var peakIntensity = config.FramebufferTarget;
 
             var (curve, hasValidParameters) = InitializeAndValidateCurve(config, peakIntensity);
 
-            var sdrCorrection = CalculateSdrCorrection(isHdr, config);
-            var displayMax = isHdr ? peakIntensity : 1.0f;
+            var outputScale = config.OutputScale;
+            var displayMax = isHdr ? peakIntensity * outputScale : 1.0f;
 
-            var convergentX = hasValidParameters ? FindConvergentPoint(curve, displayMax / sdrCorrection) : 0f;
+            var convergentX = hasValidParameters ? FindConvergentPoint(curve, displayMax / outputScale) : 0f;
 
             var (xMax, yMax) = CalculateGraphBounds(hasValidParameters, convergentX, curve,
-                sdrCorrection, displayMax, peakIntensity, isHdr);
+                outputScale, displayMax, peakIntensity, isHdr);
 
             var xTickInfo = GTCurveDrawing.CalculateTickInterval(xMax, graphRect.width);
             var yTickInfo = GTCurveDrawing.CalculateTickInterval(yMax, graphRect.height);
 
             GTCurveDrawing.DrawGrid(graphRect, xTickInfo, yTickInfo);
-            GTCurveDrawing.DrawAxisLabels(graphRect, xTickInfo, yTickInfo);
+            GTCurveDrawing.DrawAxisLabels(graphRect, xTickInfo, yTickInfo,
+                GTCurveDrawing.OutputCaption(isHdr, config.PaperWhiteNits));
 
             GUI.BeginClip(graphRect);
 
             if (hasValidParameters)
             {
                 var clippedRect = new Rect(0, 0, graphRect.width, graphRect.height);
-                var peakInFb = config.TargetPeakNits / config.ReferenceLuminance;
-                var linearEnd = config.CurveLinearSection * peakInFb;
+                var linearEnd = config.CurveLinearSection * peakIntensity;
 
-                DrawGT7Curve(clippedRect, curve, xMax, yMax, sdrCorrection, config.CurveMidPoint, linearEnd);
+                DrawGT7Curve(clippedRect, curve, xMax, yMax, outputScale, config.CurveMidPoint, linearEnd);
 
-                DrawKeyPoints(clippedRect, curve, config, xMax, yMax, sdrCorrection, displayMax, convergentX);
+                DrawKeyPoints(clippedRect, curve, config, xMax, yMax, outputScale, displayMax, convergentX);
             }
             else
             {
@@ -73,7 +75,7 @@ namespace CustomToneMapping.URP.Editor
         [BurstCompile]
         private static unsafe void EvaluateGT7Curve(GTToneMappingCurveV2* curve,
             ref NativeArray<float3> outPoints, ref NativeArray<float4> outColors, float xMax, float yMax,
-            float rectWidth, float rectHeight, float sdrCorrection, float midPoint, float linearEnd)
+            float rectWidth, float rectHeight, float outputScale, float midPoint, float linearEnd)
         {
             var sampleCount = outPoints.Length;
 
@@ -82,7 +84,7 @@ namespace CustomToneMapping.URP.Editor
                 var t = i / (float)(sampleCount - 1);
                 var x = t * xMax;
 
-                var y = curve->Evaluate(x) * sdrCorrection;
+                var y = curve->Evaluate(x) * outputScale;
 
                 // Convert to screen coordinates
                 var px = x / xMax * rectWidth;
@@ -130,7 +132,7 @@ namespace CustomToneMapping.URP.Editor
             GTToneMappingCurveV2 curve,
             float xMax,
             float yMax,
-            float sdrCorrection,
+            float outputScale,
             float midPoint,
             float linearEnd)
         {
@@ -140,7 +142,7 @@ namespace CustomToneMapping.URP.Editor
             try
             {
                 EvaluateGT7Curve(&curve, ref points, ref colors, xMax, yMax, rect.width, rect.height,
-                    sdrCorrection, midPoint, linearEnd);
+                    outputScale, midPoint, linearEnd);
                 GTCurveDrawing.DrawAAPolyline(points, colors, rect);
             }
             finally
@@ -178,16 +180,8 @@ namespace CustomToneMapping.URP.Editor
             return (curve, true);
         }
 
-        private static float CalculateSdrCorrection(bool isHdr, GT7Config config)
-        {
-            if (isHdr) return 1.0f;
-
-            var fbPaperWhite = config.SdrPaperWhite / config.ReferenceLuminance;
-            return 1.0f / fbPaperWhite;
-        }
-
         private static (float xMax, float yMax) CalculateGraphBounds(bool hasValidParameters, float convergentX,
-            GTToneMappingCurveV2 curve, float sdrCorrection, float displayMax, float peakIntensity, bool isHdr)
+            GTToneMappingCurveV2 curve, float outputScale, float displayMax, float peakIntensity, bool isHdr)
         {
             // X-axis bounds
             var xMax = 1.0f;
@@ -201,7 +195,7 @@ namespace CustomToneMapping.URP.Editor
             if (hasValidParameters)
             {
                 var curveMax = curve.Evaluate(xMax * 0.9f);
-                yMax = math.max(curveMax * sdrCorrection * 1.1f, displayMax * 1.2f);
+                yMax = math.max(curveMax * outputScale * 1.1f, displayMax * 1.2f);
             }
 
             return (xMax, yMax);
@@ -236,18 +230,17 @@ namespace CustomToneMapping.URP.Editor
         }
 
         private static void DrawKeyPoints(Rect rect, GTToneMappingCurveV2 curve, GT7Config config,
-            float xMax, float yMax, float sdrCorrection, float displayMax, float convergentX)
+            float xMax, float yMax, float outputScale, float displayMax, float convergentX)
         {
-            var peakInFb = config.TargetPeakNits / config.ReferenceLuminance;
 
             // Linear start point (midpoint where linear weight = 0.5)
             var midX = config.CurveMidPoint;
-            var midY = curve.Evaluate(midX) * sdrCorrection;
+            var midY = curve.Evaluate(midX) * outputScale;
             GTCurveDrawing.DrawKeyPoint(rect, midX, midY, xMax, yMax, GTCurveDrawing.LinearColor);
 
             // Shoulder start point (where linear ends and shoulder begins)
-            var shoulderStart = config.CurveLinearSection * peakInFb;
-            var shoulderStartY = curve.Evaluate(shoulderStart) * sdrCorrection;
+            var shoulderStart = config.CurveLinearSection * config.FramebufferTarget;
+            var shoulderStartY = curve.Evaluate(shoulderStart) * outputScale;
             GTCurveDrawing.DrawKeyPoint(rect, shoulderStart, shoulderStartY, xMax, yMax, GTCurveDrawing.ShoulderColor);
 
             // Shoulder convergent point

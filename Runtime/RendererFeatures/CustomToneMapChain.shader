@@ -27,7 +27,7 @@ Shader "Hidden/CustomToneMapChain"
         #include "Packages/net.aki-null.tonemapping/Runtime/URP/Shaders/TonemapParams.hlsl"
 
         #if defined(HDR_COLORSPACE_CONVERSION)
-        float4 _HDROutputLuminanceParams; // xy: brightness min/max, z: paper white brightness, w: 1.0 / brightness max
+        float4 _HDROutputLuminanceParams; // xy: brightness min/max, z: paper white, w: 1 / paper white
         #define PaperWhite _HDROutputLuminanceParams.z
         #endif
 
@@ -74,11 +74,11 @@ Shader "Hidden/CustomToneMapChain"
                 #if defined(HDR_COLORSPACE_CONVERSION)
                 // HDR Display Output: Reverse URP's HDR processing
                 // The internal LUT contains colors that have been rotated to output space and scaled by paper white
-                half3 colorLinear = ReverseHDRProcessing(color);
+                float3 colorLinear = ReverseHDRProcessing(color);
                 #include "Packages/net.aki-null.tonemapping/Runtime/URP/Shaders/TonemapHdr.hlsl"
                 #else
                 // SDR Output
-                half3 colorLinear = color;
+                float3 colorLinear = color;
                 #include "Packages/net.aki-null.tonemapping/Runtime/URP/Shaders/Tonemap.hlsl"
                 return colorLinear;
                 #endif

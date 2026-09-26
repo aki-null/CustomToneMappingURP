@@ -2,6 +2,7 @@ using UnityEditor;
 using UnityEditor.Rendering;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 
 namespace CustomToneMapping.URP.Editor
 {
@@ -33,6 +34,18 @@ namespace CustomToneMapping.URP.Editor
             }
         }
 
+        public override void OnDisable()
+        {
+            ReleaseTonemapping();
+            base.OnDisable();
+        }
+
+        private void ReleaseTonemapping()
+        {
+            _tonemapping?.Dispose();
+            _tonemapping = null;
+        }
+
         public override void OnInspectorGUI()
         {
             // Skip drawing if initialization failed
@@ -42,6 +55,7 @@ namespace CustomToneMapping.URP.Editor
             SetupValidator.DrawSetupValidation(target as VolumeComponent);
 
             DrawModeSelection();
+            DrawPaperWhite();
 
             // Draw additional properties section (LUT Size, Debug Export)
             if (showAdditionalProperties)
@@ -84,6 +98,99 @@ namespace CustomToneMapping.URP.Editor
                 }
             }
         }
+
+        // Paper white lives on URP's Tonemapping component, whose inspector hides it in the None and Custom modes. So it
+        // is drawn here, for this profile's override only, like any volume inspector.
+        private void DrawPaperWhite()
+        {
+            var mode = (ToneMappingMode)_mode.value.intValue;
+            if (!PlayerSettings.allowHDRDisplaySupport || mode == ToneMappingMode.None)
+                return;
+
+            var profile = SetupValidator.OwningProfile(target as VolumeComponent);
+            if (profile == null)
+                return;
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("HDR Output", EditorStyles.boldLabel);
+
+            if (!profile.TryGet<Tonemapping>(out var tonemapping))
+            {
+                ReleaseTonemapping();
+                DrawPaperWhiteInEffect();
+                if (GUILayout.Button("Add Tonemapping Override"))
+                {
+                    AddTonemappingOverride(profile);
+                    GUIUtility.ExitGUI();
+                }
+                return;
+            }
+
+            if (!tonemapping.active)
+            {
+                ReleaseTonemapping();
+                EditorGUILayout.HelpBox("This profile's Tonemapping override is disabled, so Paper White has no effect.",
+                    MessageType.Info);
+                return;
+            }
+
+            if (_tonemapping == null || _tonemapping.targetObject != tonemapping)
+            {
+                ReleaseTonemapping();
+                _tonemapping = new SerializedObject(tonemapping);
+                var o = new PropertyFetcher<Tonemapping>(_tonemapping);
+                _detectPaperWhite = Unpack(o.Find(x => x.detectPaperWhite));
+                _paperWhite = Unpack(o.Find(x => x.paperWhite));
+            }
+
+            _tonemapping.Update();
+            PropertyField(_detectPaperWhite, PaperWhiteDetectLabel);
+            EditorGUI.indentLevel++;
+            using (new EditorGUI.DisabledScope(_detectPaperWhite.value.boolValue))
+                PropertyField(_paperWhite, PaperWhiteLabel);
+            EditorGUI.indentLevel--;
+            _tonemapping.ApplyModifiedProperties();
+        }
+
+        // Read-only: the paper white in effect.
+        private static void DrawPaperWhiteInEffect()
+        {
+            var applied = SetupValidator.StackTonemapping();
+            if (applied == null)
+                return;
+            using (new EditorGUI.DisabledScope(true))
+                EditorGUILayout.TextField(PaperWhiteLabel, applied.detectPaperWhite.value
+                    ? "Detected from the display"
+                    : $"{applied.paperWhite.value} nits (in effect)");
+        }
+
+        // Like the profile's Add Override, seeded with the values in effect. Mode stays unticked but shows the mode in
+        // effect, not None. Paper white starts ticked at its current value, so nothing changes until it is edited.
+        private static void AddTonemappingOverride(VolumeProfile profile)
+        {
+            var applied = SetupValidator.StackTonemapping();
+            Undo.RecordObject(profile, "Add Tonemapping Override");
+            var tonemapping = profile.Add<Tonemapping>();
+            if (applied != null)
+            {
+                tonemapping.mode.value = applied.mode.value;
+                tonemapping.detectPaperWhite.Override(applied.detectPaperWhite.value);
+                tonemapping.paperWhite.Override(applied.paperWhite.value);
+            }
+            Undo.RegisterCreatedObjectUndo(tonemapping, "Add Tonemapping Override");
+            AssetDatabase.AddObjectToAsset(tonemapping, profile); // OwningProfile only returns assets
+            EditorUtility.SetDirty(profile);
+            AssetDatabase.SaveAssets();
+        }
+
+        private static readonly GUIContent PaperWhiteDetectLabel = new("Detect Paper White",
+            "Use the paper white the display reports. A URP Tonemapping setting.");
+        private static readonly GUIContent PaperWhiteLabel = new("Paper White",
+            "Brightness of SDR white and UI on HDR displays, in nits. Highlights still stop at the peak. A URP Tonemapping setting.");
+
+        private SerializedObject _tonemapping;
+        private SerializedDataParameter _detectPaperWhite;
+        private SerializedDataParameter _paperWhite;
 
         private static void DrawCustomLutValidation(Texture2D lutTexture)
         {

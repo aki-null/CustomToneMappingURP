@@ -30,13 +30,13 @@ namespace CustomToneMapping.URP.RendererFeatures
         {
             HDROutputUtils.ConfigureHDROutput(_material, hdrDisplayColorGamut,
                 HDROutputUtils.Operation.ColorConversion);
-            var hdrParams = new Vector4(
+            // URP's paper white, not the display's: it undoes URP's scaling and matches the bake. Only .z is read.
+            var paperWhite = UrpBridge.PaperWhiteNits(hdrDisplayInformation);
+            _material.SetVector(HDROutputLuminanceParams, new Vector4(
                 hdrDisplayInformation.minToneMapLuminance,
                 hdrDisplayInformation.maxToneMapLuminance,
-                hdrDisplayInformation.paperWhiteNits,
-                1.0f / hdrDisplayInformation.paperWhiteNits
-            );
-            _material.SetVector(HDROutputLuminanceParams, hdrParams);
+                paperWhite,
+                1.0f / paperWhite));
         }
 
         #region Render Graph

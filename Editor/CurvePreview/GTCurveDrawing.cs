@@ -13,6 +13,7 @@ namespace CustomToneMapping.URP.Editor
         private const float KeyPointRadius = 4f;
         private const float LabelMargin = 25f;
         private const float BottomMargin = 25f;
+        private const float TopMargin = 16f; // the output caption's line, above the plot
 
         public const int CurveSampleCount = 256;
 
@@ -30,9 +31,9 @@ namespace CustomToneMapping.URP.Editor
         {
             return new Rect(
                 rect.x + LabelMargin,
-                rect.y,
+                rect.y + TopMargin,
                 rect.width - LabelMargin - 10f,
-                rect.height - BottomMargin
+                rect.height - BottomMargin - TopMargin
             );
         }
 
@@ -87,13 +88,24 @@ namespace CustomToneMapping.URP.Editor
             );
         }
 
-        public static void DrawAxisLabels(Rect graphRect, TickInfo xTicks, TickInfo yTicks)
+        // What output 1 means on the y axis: SDR white, or paper white in nits for HDR, where the peak is above 1.
+        public static string OutputCaption(bool isHdr, float paperWhiteNits) =>
+            isHdr ? $"1 = paper white ({paperWhiteNits:0} nits)" : "1 = SDR white";
+
+        public static void DrawAxisLabels(Rect graphRect, TickInfo xTicks, TickInfo yTicks, string yCaption = null)
         {
             var xLabelStyle = new GUIStyle(EditorStyles.miniLabel)
             {
                 alignment = TextAnchor.MiddleCenter,
                 normal = { textColor = LabelColor }
             };
+
+            // Above the plot, in the band CreateGraphRect reserves, so it never overlaps the grid or the curve.
+            if (!string.IsNullOrEmpty(yCaption))
+            {
+                var captionStyle = new GUIStyle(xLabelStyle) { alignment = TextAnchor.MiddleLeft };
+                GUI.Label(new Rect(graphRect.x, graphRect.y - TopMargin, graphRect.width, TopMargin), yCaption, captionStyle);
+            }
 
             // X-axis tick labels (skip 0)
             for (var x = xTicks.Interval; x <= xTicks.Max; x += xTicks.Interval)

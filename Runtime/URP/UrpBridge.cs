@@ -91,6 +91,16 @@ namespace CustomToneMapping.URP
             var mode = customMode.mode.value;
             var lutSize = customMode.lutSize.value;
             var hdr = hdrDisplayInfo.HasValue;
+            // TonemapHdr.hlsl multiplies HDR LUTs by paper white, so they are baked for it. Their peak then lands on the
+            // target peak.
+            var paperWhite = hdr ? PaperWhiteNits(hdrDisplayInfo.Value) : 0f;
+            if (hdr && !(paperWhite > 0f))
+            {
+                // URP allows 0, which blacks out its own HDR output. The chain pass would divide by it.
+                DisableCustomKeyword(material);
+                LogFailure(mode, MaterialPreparationStatus.Invalid, "URP's paper white must be above 0 nits (Tonemapping component, or the display's value with Detect Paper White on)");
+                return MaterialPreparationStatus.Invalid;
+            }
             Texture2D lut = null;
             string error;
             MaterialPreparationStatus status;
@@ -103,7 +113,7 @@ namespace CustomToneMapping.URP
                     status = vol == null
                         ? MissingVolume(mode, out error)
                         : BuiltInLutCache.GetOrBake(vol.ToConfig(
-                            PeakNits(vol.targetPeakNits.value, vol.detectPeakNits.value, hdrDisplayInfo), hdr, lutSize),
+                            PeakNits(vol.targetPeakNits.value, vol.detectPeakNits.value, hdrDisplayInfo), paperWhite, hdr, lutSize),
                             out lut, out error);
                     break;
                 }
@@ -113,7 +123,7 @@ namespace CustomToneMapping.URP
                     status = vol == null
                         ? MissingVolume(mode, out error)
                         : BuiltInLutCache.GetOrBake(vol.ToConfig(
-                            PeakNits(vol.targetPeakNits.value, vol.detectPeakNits.value, hdrDisplayInfo), hdr, lutSize),
+                            PeakNits(vol.targetPeakNits.value, vol.detectPeakNits.value, hdrDisplayInfo), paperWhite, hdr, lutSize),
                             out lut, out error);
                     break;
                 }
@@ -123,7 +133,7 @@ namespace CustomToneMapping.URP
                     status = vol == null
                         ? MissingVolume(mode, out error)
                         : BuiltInLutCache.GetOrBake(vol.ToConfig(
-                            PeakNits(vol.maxNits.value, vol.detectBrightnessLimits.value, hdrDisplayInfo), hdr, lutSize),
+                            PeakNits(vol.maxNits.value, vol.detectBrightnessLimits.value, hdrDisplayInfo), paperWhite, hdr, lutSize),
                             out lut, out error);
                     break;
                 }
@@ -152,6 +162,14 @@ namespace CustomToneMapping.URP
             SetKeyword(material, TonemapCustomKeyword, true);
             return MaterialPreparationStatus.Ready;
         }
+
+        // The paper white URP's LutBuilderHdr uses. This assembly cannot see URP's Tonemapping component, because a
+        // customized URP references this assembly, so the Renderer Feature assembly registers the resolver (UrpHdrOutput).
+        // Without it, the display's value is used, as URP does with Detect Paper White on.
+        internal static System.Func<HDROutputUtils.HDRDisplayInformation, float> PaperWhiteResolver;
+
+        internal static float PaperWhiteNits(HDROutputUtils.HDRDisplayInformation info) =>
+            PaperWhiteResolver?.Invoke(info) ?? info.paperWhiteNits;
 
         // A display that reports no peak keeps the manual value.
         private static float PeakNits(float target, bool detect, HDROutputUtils.HDRDisplayInformation? hdrDisplayInfo) =>

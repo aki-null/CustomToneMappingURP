@@ -9,6 +9,9 @@ namespace CustomToneMapping.Baker.GT
         public float ReferenceLuminance;
         public float SdrPaperWhite;
 
+        // HDR only: URP's paper white, the nits of LUT value 1.0.
+        public float PaperWhiteNits;
+
         // Curve parameters
         public float Contrast; // a parameter
         public float LinearSectionStart; // m parameter
@@ -17,6 +20,18 @@ namespace CustomToneMapping.Baker.GT
         public float BlackOffset; // b parameter
 
         public int LutSize { get; set; }
+
+        // Nits of framebuffer 1.0. In HDR, SDR white lands on PaperWhiteNits, so midtones match SDR.
+        // PaperWhiteNits == SdrPaperWhite gives the reference mapping.
+        private float EffectiveReferenceLuminance =>
+            IsHdrOutput ? ReferenceLuminance * PaperWhiteNits / SdrPaperWhite : ReferenceLuminance;
+
+        // Curve peak in framebuffer units: the display peak (HDR) or SDR white (SDR).
+        public float FramebufferTarget => (IsHdrOutput ? TargetPeakNits : SdrPaperWhite) / EffectiveReferenceLuminance;
+
+        // Framebuffer to LUT value, the same in SDR and HDR.
+        // HDR peak = FramebufferTarget * OutputScale * PaperWhiteNits = TargetPeakNits.
+        public float OutputScale => 1.0f / (SdrPaperWhite / ReferenceLuminance);
 
         public bool TryValidate(out string error)
         {
@@ -46,8 +61,13 @@ namespace CustomToneMapping.Baker.GT
                 return false;
             }
 
-            var physicalTarget = IsHdrOutput ? TargetPeakNits : SdrPaperWhite;
-            var framebufferTarget = physicalTarget / ReferenceLuminance;
+            if (IsHdrOutput && (!ValidationPrimitives.IsFinite(PaperWhiteNits) || PaperWhiteNits <= 0.0f))
+            {
+                error = "GT tone mapping needs a positive paper white for HDR output.";
+                return false;
+            }
+
+            var framebufferTarget = FramebufferTarget;
             var denominator = (framebufferTarget - LinearSectionStart) *
                               (1.0f - LinearSectionLength);
 
@@ -73,6 +93,7 @@ namespace CustomToneMapping.Baker.GT
                    IsHdrOutput == other.IsHdrOutput &&
                    HashUtil.FloatBitsEqual(ReferenceLuminance, other.ReferenceLuminance) &&
                    HashUtil.FloatBitsEqual(SdrPaperWhite, other.SdrPaperWhite) &&
+                   HashUtil.FloatBitsEqual(PaperWhiteNits, other.PaperWhiteNits) &&
                    HashUtil.FloatBitsEqual(Contrast, other.Contrast) &&
                    HashUtil.FloatBitsEqual(LinearSectionStart, other.LinearSectionStart) &&
                    HashUtil.FloatBitsEqual(LinearSectionLength, other.LinearSectionLength) &&

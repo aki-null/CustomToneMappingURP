@@ -5,6 +5,7 @@ namespace CustomToneMapping.Baker.AgX
     public struct AgXConfig : ILutConfig, IStripLutConfig, IEquatable<AgXConfig>
     {
         public float HdrMaxNits;
+        // Nits of output 1.0 (SDR white). For HDR, URP's paper white.
         public float SdrMaxNits;
         public float HdrPurity;
         public float HdrExtraPowerFactor;
@@ -35,12 +36,6 @@ namespace CustomToneMapping.Baker.AgX
                 HdrExtraPowerFactor <= 0.0f)
             {
                 error = "AgX tone mapping contains an out-of-range parameter.";
-                return false;
-            }
-
-            if (IsHdrOutput && HdrMaxNits < SdrMaxNits)
-            {
-                error = "AgX HDR maximum luminance must be at least the SDR maximum luminance.";
                 return false;
             }
 

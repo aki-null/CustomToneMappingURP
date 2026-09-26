@@ -80,6 +80,12 @@ Alternatively, add it to your `Packages/manifest.json`:
 3. Add the mode-specific volume component to configure parameters
    - Each mode requires its own dedicated volume component (e.g., **GT Tone Mapping**, **GT7 Tone Mapping**, **AgX Tone Mapping**, etc.)
 
+### HDR output
+
+- **Paper White** (URP's Tonemapping component) sets the brightness of SDR white and UI, in nits.
+  - GT, GT7, AgX and Custom LUT show SDR white at Paper White.
+- Set it under **HDR Output** in the **Custom Tone Mapping** inspector. URP's Tonemapping inspector hides it in the None and Custom modes.
+
 ## Modes
 
 ### GT Tone Mapping

@@ -2,14 +2,26 @@
 
 ## Unreleased
 
+### Added
+- The Custom Tone Mapping inspector shows URP's **Paper White** under HDR Output. URP hides it in the None and Custom modes.
+
 ### Changed
+- The GT and GT7 curve previews label the output axis: SDR white, or paper white in nits for HDR
 - A failed LUT bake is retried, with a growing wait, instead of staying off until play mode changes
 - The Renderer Feature no longer tone maps cameras that grade in LDR, in every mode. Cameras outputting to an HDR display are unaffected.
 - Baked LUTs are no longer evicted by switching modes, or expired by frames where only cameras without post-processing (such as UI cameras) render
 - Peak luminance (GT and GT7 **Target Peak Nits**, AgX **Max Nits**) no longer blends between volumes.
+- GT and GT7 **SDR Paper White** now also sets HDR midtones. At its default (equal to Reference Luminance), they are unchanged.
+
+### Breaking
+- AgX **SDR Paper White** is removed. Use URP's Paper White.
 
 ### Fixed
 - GT, GT7 and AgX fall back to their manual peak luminance when peak detection is on but the display reports no peak. Tone mapping used to turn off.
+- GT, GT7 and AgX HDR output overshot the target peak (3× for GT and GT7 at URP's default paper white), so highlights clipped. Remove workarounds such as a lowered target peak or Paper White 100.
+- The Renderer Feature used the display's paper white instead of URP's under HDR output, which shifted exposure.
+- AgX no longer turns off on HDR displays dimmer than paper white. It scales the SDR image to the peak.
+- A paper white of 0 disables custom tone mapping with a message, instead of producing invalid output.
 
 ## 1.2.6 - 2026-09-23
 

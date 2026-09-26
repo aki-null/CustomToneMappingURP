@@ -48,6 +48,22 @@ namespace CustomToneMapping.URP.Editor
             }
         }
 
+        // URP's Tonemapping as the volume stack last resolved it.
+        internal static Tonemapping StackTonemapping() => Resolve<Tonemapping>(null);
+
+        // Paper white for HDR curve previews: this profile's if its active override ticks it, else the one in effect,
+        // else URP's default. The editor cannot detect it from a display.
+        internal static float PaperWhite(VolumeComponent inspected)
+        {
+            var profile = OwningProfile(inspected);
+            var tonemapping = profile != null && profile.TryGet<Tonemapping>(out var own) && own.active &&
+                              own.paperWhite.overrideState
+                ? own
+                : StackTonemapping();
+            var paperWhite = tonemapping?.paperWhite.value ?? 0f;
+            return paperWhite > 0f ? paperWhite : 300f;
+        }
+
         private static SetupStatus GetSetupStatus(VolumeProfile profile)
         {
             var status = new SetupStatus

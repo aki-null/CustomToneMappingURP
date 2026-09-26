@@ -12,28 +12,15 @@ namespace CustomToneMapping.Tests
             Assert.IsTrue(CreateConfig().TryValidate(out var error), error);
         }
 
-        [Test]
-        public void VolumeCanProduceInvalidHdrRange()
+        // A display dimmer than paper white is valid: the SDR image is scaled to its peak (PaperWhiteTests).
+        [TestCase(true)]
+        [TestCase(false)]
+        public void AllowsPeakBelowPaperWhite(bool isHdrOutput)
         {
             var volume = ScriptableObject.CreateInstance<CustomToneMapping.URP.AgXToneMapping>();
             volume.maxNits.value = 100.0f;
-            volume.sdrPaperWhite.value = 1000.0f;
 
-            var config = volume.ToConfig(volume.maxNits.value, true, 32);
-            Object.DestroyImmediate(volume);
-
-            Assert.IsFalse(config.TryValidate(out var error));
-            StringAssert.Contains("at least", error);
-        }
-
-        [Test]
-        public void AllowsVolumeHdrRangeBelowSdrRangeForSdrOutput()
-        {
-            var volume = ScriptableObject.CreateInstance<CustomToneMapping.URP.AgXToneMapping>();
-            volume.maxNits.value = 100.0f;
-            volume.sdrPaperWhite.value = 1000.0f;
-
-            var config = volume.ToConfig(volume.maxNits.value, false, 32);
+            var config = volume.ToConfig(volume.maxNits.value, 400.0f, isHdrOutput, 32);
             Object.DestroyImmediate(volume);
 
             Assert.IsTrue(config.TryValidate(out var error), error);

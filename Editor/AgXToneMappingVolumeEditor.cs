@@ -11,7 +11,6 @@ namespace CustomToneMapping.URP.Editor
         // HDR Output parameters
         private SerializedDataParameter _detectBrightnessLimits;
         private SerializedDataParameter _maxNits;
-        private SerializedDataParameter _sdrPaperWhite;
 
         // Look parameters
         private SerializedDataParameter _look;
@@ -34,7 +33,6 @@ namespace CustomToneMapping.URP.Editor
 
                 _detectBrightnessLimits = Unpack(o.Find(x => x.detectBrightnessLimits));
                 _maxNits = Unpack(o.Find(x => x.maxNits));
-                _sdrPaperWhite = Unpack(o.Find(x => x.sdrPaperWhite));
 
                 _look = Unpack(o.Find(x => x.look));
                 _lookIntensity = Unpack(o.Find(x => x.lookIntensity));
@@ -70,7 +68,6 @@ namespace CustomToneMapping.URP.Editor
 
                 EditorGUI.indentLevel--;
 
-                PropertyField(_sdrPaperWhite);
                 PropertyField(_hdrPurity);
                 PropertyField(_hdrExtraPowerFactor);
 

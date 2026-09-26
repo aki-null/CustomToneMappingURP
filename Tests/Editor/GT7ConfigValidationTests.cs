@@ -19,7 +19,7 @@ namespace CustomToneMapping.Tests
             volume.fadeStart.value = 2.0f;
             volume.fadeEnd.value = 0.0f;
 
-            var config = volume.ToConfig(volume.targetPeakNits.value, false, 32);
+            var config = volume.ToConfig(volume.targetPeakNits.value, 300.0f, false, 32);
             Object.DestroyImmediate(volume);
 
             Assert.IsFalse(config.TryValidate(out var error));

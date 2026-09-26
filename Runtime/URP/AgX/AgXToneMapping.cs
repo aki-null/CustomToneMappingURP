@@ -25,10 +25,6 @@ namespace CustomToneMapping.URP
         [Tooltip("Target peak luminance in nits for HDR tonemapping.")]
         public NoInterpClampedFloatParameter maxNits = new(1000.0f, 100.0f, 10000.0f);
 
-        [Tooltip("SDR paper white (nits)")]
-        [InspectorName("SDR Paper White")]
-        public ClampedFloatParameter sdrPaperWhite = new(250.0f, 50.0f, 1000.0f);
-
         public AgXLookParameter look = new(AgXLookPreset.None);
 
         [Tooltip("Look intensity/blend amount (0-1). 0 = no look applied, 1 = full look intensity.")]
@@ -46,7 +42,7 @@ namespace CustomToneMapping.URP
         [InspectorName("Limit to DCI-P3")]
         public BoolParameter useP3Limit = new(false);
 
-        public AgXConfig ToConfig(float peakNits, bool isHdrOutput, int lutSize)
+        public AgXConfig ToConfig(float peakNits, float paperWhiteNits, bool isHdrOutput, int lutSize)
         {
             // Configure look
             var lookConfig = AgXLookConfig.GetPreset(look.value);
@@ -56,7 +52,8 @@ namespace CustomToneMapping.URP
             return new AgXConfig
             {
                 HdrMaxNits = peakNits,
-                SdrMaxNits = sdrPaperWhite.value,
+                // SDR ignores both. Equal values keep SDR bakes independent of paper white.
+                SdrMaxNits = isHdrOutput ? paperWhiteNits : peakNits,
                 HdrPurity = hdrPurity.value,
                 HdrExtraPowerFactor = hdrExtraPowerFactor.value,
                 UseP3Limit = useP3Limit.value,

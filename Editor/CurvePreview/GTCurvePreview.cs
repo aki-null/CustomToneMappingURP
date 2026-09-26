@@ -13,43 +13,37 @@ namespace CustomToneMapping.URP.Editor
         private const float XMaxFallbackMultiplier = 3.0f;
         private const float XMaxUpperBoundMultiplier = 50f;
 
-        public static void DrawCurvePreview(Rect rect, GTConfig config, float peakNits, bool isHdr)
+        public static void DrawCurvePreview(Rect rect, GTConfig config)
         {
             var graphRect = GTCurveDrawing.CreateGraphRect(rect);
             GTCurveDrawing.DrawBackground(graphRect);
             var mapper = new GTToneMapping();
-            config.TargetPeakNits = peakNits;
-            config.IsHdrOutput = isHdr;
+            var isHdr = config.IsHdrOutput;
 
             if (isHdr)
                 mapper.InitializeAsHdr(config);
             else
                 mapper.InitializeAsSdr(config);
 
-            var maxValue = peakNits / config.ReferenceLuminance;
-            var displayMax = isHdr ? maxValue : 1.0f;
-
-            // Use the actual framebuffer target that the tone mapper uses
-            var framebufferTarget = isHdr
-                ? config.TargetPeakNits / config.ReferenceLuminance
-                : config.SdrPaperWhite / config.ReferenceLuminance;
+            // The y axis is the baked value: SDR white is 1, the HDR peak is peak / paper white.
+            var framebufferTarget = config.FramebufferTarget;
+            var outputScale = config.OutputScale;
+            var displayMax = isHdr ? framebufferTarget * outputScale : 1.0f;
 
             var targetOutput = displayMax * ConvergenceTarget;
-
-            // Account for SDR correction in convergence calculation
-            var sdrCorrection = isHdr ? 1.0f : (config.ReferenceLuminance / config.SdrPaperWhite);
-            var rawTargetOutput = targetOutput / sdrCorrection;
+            var rawTargetOutput = targetOutput / outputScale;
 
             var xMax = FindShoulderConvergencePoint(config, rawTargetOutput, framebufferTarget);
 
-            if (xMax <= 0 || xMax > maxValue * XMaxUpperBoundMultiplier)
-                xMax = maxValue * XMaxFallbackMultiplier;
+            if (xMax <= 0 || xMax > framebufferTarget * XMaxUpperBoundMultiplier)
+                xMax = framebufferTarget * XMaxFallbackMultiplier;
 
             var xTickInfo = GTCurveDrawing.CalculateTickInterval(xMax, graphRect.width);
             var yTickInfo = GTCurveDrawing.CalculateTickInterval(displayMax, graphRect.height);
 
             GTCurveDrawing.DrawGrid(graphRect, xTickInfo, yTickInfo);
-            GTCurveDrawing.DrawAxisLabels(graphRect, xTickInfo, yTickInfo);
+            GTCurveDrawing.DrawAxisLabels(graphRect, xTickInfo, yTickInfo,
+                GTCurveDrawing.OutputCaption(isHdr, config.PaperWhiteNits));
 
             GUI.BeginClip(graphRect);
             var clippedRect = new Rect(0, 0, graphRect.width, graphRect.height);
