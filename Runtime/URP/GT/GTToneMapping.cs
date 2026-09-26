@@ -5,7 +5,7 @@ using UnityEngine.Rendering;
 
 namespace CustomToneMapping.URP.GT
 {
-    [Serializable, VolumeComponentMenu("Post-processing/Custom/GT Tone Mapping")]
+    [Serializable, VolumeComponentMenu("Post-processing/GT Tone Mapping")]
     public sealed class GTToneMapping : VolumeComponent
     {
         public const float DefaultReferenceLuminance = 100.0f;

@@ -9,6 +9,7 @@
 - An inspector for **ACES 2.0 Tone Mapping**, matching the other modes
 
 ### Changed
+- **GT Tone Mapping** moved from the Post-processing/Custom menu to Post-processing, next to the other modes
 - The GT and GT7 curve previews label the output axis: SDR white, or paper white in nits for HDR
 - A failed LUT bake is retried, with a growing wait, instead of staying off until play mode changes
 - The Renderer Feature no longer tone maps cameras that grade in LDR, in every mode. Cameras outputting to an HDR display are unaffected.
