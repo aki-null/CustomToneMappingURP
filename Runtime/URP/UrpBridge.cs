@@ -153,9 +153,11 @@ namespace CustomToneMapping.URP
             return MaterialPreparationStatus.Ready;
         }
 
-        // The display's peak when detection is on.
+        // A display that reports no peak keeps the manual value.
         private static float PeakNits(float target, bool detect, HDROutputUtils.HDRDisplayInformation? hdrDisplayInfo) =>
-            hdrDisplayInfo.HasValue && detect ? hdrDisplayInfo.Value.maxToneMapLuminance : target;
+            hdrDisplayInfo.HasValue && detect && hdrDisplayInfo.Value.maxToneMapLuminance > 0
+                ? hdrDisplayInfo.Value.maxToneMapLuminance
+                : target;
 
         private static MaterialPreparationStatus MissingVolume(ToneMappingMode mode, out string error)
         {

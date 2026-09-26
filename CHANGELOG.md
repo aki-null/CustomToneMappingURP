@@ -5,6 +5,10 @@
 ### Changed
 - A failed LUT bake is retried, with a growing wait, instead of staying off until play mode changes
 - Baked LUTs are no longer evicted by switching modes, or expired by frames where only cameras without post-processing (such as UI cameras) render
+- Peak luminance (GT and GT7 **Target Peak Nits**, AgX **Max Nits**) no longer blends between volumes.
+
+### Fixed
+- GT, GT7 and AgX fall back to their manual peak luminance when peak detection is on but the display reports no peak. Tone mapping used to turn off.
 
 ## 1.2.6 - 2026-09-23
 

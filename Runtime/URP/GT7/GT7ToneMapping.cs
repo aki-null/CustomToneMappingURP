@@ -23,8 +23,9 @@ namespace CustomToneMapping.URP
         [Tooltip("Automatically detect display peak luminance for HDR.")]
         public BoolParameter detectPeakNits = new(true);
 
+        // Not blended between volumes: every distinct peak is a new LUT bake.
         [Tooltip("Target peak luminance in nits for HDR tonemapping.")]
-        public ClampedFloatParameter targetPeakNits = new(1000.0f, 100.0f, 10000.0f);
+        public NoInterpClampedFloatParameter targetPeakNits = new(1000.0f, 100.0f, 10000.0f);
 
         [Tooltip("SDR paper white (nits). Only used if integrating SDR path.")]
         [InspectorName("SDR Paper White")]
