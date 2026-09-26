@@ -1,77 +1,46 @@
 using System;
-using System.Collections.Generic;
 using CustomToneMapping.Baker;
+using CustomToneMapping.Baker.AgX;
+using CustomToneMapping.Baker.GT;
+using CustomToneMapping.Baker.GT7;
 using UnityEngine;
 using UnityEngine.Rendering;
 
 namespace CustomToneMapping.URP
 {
-    // Built-in LUT cache with two independent four-entry tables:
-    // - ReadyEntries owns successfully baked textures.
-    // - FailureEntries remembers invalid/unsupported requests.
-    // Keeping failures out of the ready table guarantees that a bad configuration
-    // cannot evict a reusable LUT. Both tables use bounded linear scans so warm
-    // hits stay allocation-free and predictable.
-    internal static partial class BuiltInLutCache
+    // What the built-in modes bake, kept per config type (GT, GT7, AgX), up to Capacity configs each, least recently
+    // used replaced first.
+    //
+    // Entries age by frames that tone map, not by time: Tick runs only when a post-processed camera reaches the
+    // package. While only cameras without post-processing render (a UI camera over a paused 3D view), nothing ages,
+    // so coming back never pays for a rebake.
+    internal static class BuiltInLutCache
     {
-        private const int Capacity = 4;
-        // Match RenderGraph's grace period for resources used by intermittent cameras.
-        private const int StaleLifetimeFrames = 10;
+        internal const int Capacity = 4;
+        internal const int StaleLifetimeFrames = 600;
+        // A config whose bake threw is retried after this many tone-mapped frames. The window doubles while it keeps
+        // failing, up to MaxFailureRetryFrames, so a persistent failure of a slow bake does not hitch on a fixed cadence.
+        internal const int FailureRetryFrames = StaleLifetimeFrames;
+        internal const int MaxFailureRetryFrames = FailureRetryFrames * 16;
 
-        // This layout is shared by both tables. Failure-only fields remain unused
-        // in ReadyEntries; Texture remains null in FailureEntries.
-        private struct CacheEntry
-        {
-            public BuiltInToneMappingKind Kind;
-            public uint ConfigHash;
-            public Texture2D Texture;
-            public Vector3 LutParams;
-            public ulong LastUsedStamp;
-            public int LastUsedFrame;
-            public bool IsOccupied;
-            public MaterialPreparationStatus FailureStatus;
-            public string FailureMessage;
-            public bool FailureWasReported;
-        }
+        // Tests only: while set, every bake throws it, to drive the failure path. ClearCache resets it.
+        internal static Exception InjectedBakeFailure;
 
-        private interface IBuiltInLutAdapter<TConfig>
-            where TConfig : struct
-        {
-            bool TryValidate(in TConfig config, out string error);
-            bool IsHdrOutput(in TConfig config);
-            void Bake(in TConfig config, ref Texture2D texture);
-        }
-
-        // Each entry is paired by index with the corresponding typed snapshot
-        // array in BuiltInLutCache.BuiltIns.cs. The snapshot makes hash matches
-        // collision-safe without boxing the config.
-        private static readonly CacheEntry[] ReadyEntries = new CacheEntry[Capacity];
-        private static readonly CacheEntry[] FailureEntries = new CacheEntry[Capacity];
-        private static ulong _accessStamp;
-        private static int _lastReadySlot = -1;
-        private static int _lastFailureSlot = -1;
+        private static event Action<bool> Sweep; // true clears, false purges stale entries
+        private static int _lastFrameCount = -1;
+        private static int _frame;
 
         static BuiltInLutCache()
         {
-            // Register once per domain, including edit mode and play mode without
-            // domain reload. Cleanup must run even when tonemapping is disabled.
-            // Keep subscriptions when clearing: Application.quitting also fires
-            // on leaving play mode, when this domain can remain alive.
-            RenderPipelineManager.endContextRendering += OnEndContextRendering;
+            // Register once per domain, including edit mode and play mode without domain reload. Application.quitting
+            // also fires on leaving play mode, when this domain can remain alive. Entering play mode is covered by the
+            // SubsystemRegistration attribute below.
             Application.quitting += ClearForLifecycleChange;
 #if UNITY_EDITOR
             UnityEditor.AssemblyReloadEvents.beforeAssemblyReload += ClearForLifecycleChange;
             UnityEditor.EditorApplication.quitting += ClearForLifecycleChange;
-            UnityEditor.EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
 #endif
         }
-
-        // Used by the renderer after a successful lookup/bake. Failure lookups
-        // never change this to null or hide the most recently used ready LUT.
-        internal static Texture2D CachedLutTexture =>
-            _lastReadySlot >= 0 && ReadyEntries[_lastReadySlot].IsOccupied
-                ? ReadyEntries[_lastReadySlot].Texture
-                : null;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ClearForLifecycleChange()
@@ -80,326 +49,200 @@ namespace CustomToneMapping.URP
             UrpBridge.ResetFailureState();
         }
 
-        private static void OnEndContextRendering(ScriptableRenderContext context, List<Camera> cameras)
-        {
-            PurgeUnused(Time.frameCount);
-        }
-
-#if UNITY_EDITOR
-        private static void OnPlayModeStateChanged(UnityEditor.PlayModeStateChange state)
-        {
-            if (state == UnityEditor.PlayModeStateChange.ExitingEditMode ||
-                state == UnityEditor.PlayModeStateChange.ExitingPlayMode)
-            {
-                ClearForLifecycleChange();
-            }
-        }
-#endif
-
-        // Called outside graph execution. Keep access-stamp LRU independent of
-        // frame age so multiple requests in one frame retain their exact ordering.
-        internal static void PurgeUnused(int currentFrame)
-        {
-            for (var i = 0; i < Capacity; i++)
-            {
-                ref var entry = ref ReadyEntries[i];
-                if (!entry.IsOccupied ||
-                    unchecked((uint)(currentFrame - entry.LastUsedFrame)) <= StaleLifetimeFrames)
-                    continue;
-
-                CoreUtils.Destroy(entry.Texture);
-                entry = default;
-                ClearReadySnapshot(i);
-                if (_lastReadySlot == i)
-                    _lastReadySlot = -1;
-            }
-        }
-
         internal static void ClearCache()
         {
-            for (var i = 0; i < Capacity; i++)
-            {
-                CoreUtils.Destroy(ReadyEntries[i].Texture);
-                ReadyEntries[i] = default;
-                FailureEntries[i] = default;
-            }
-
-            _accessStamp = 0;
-            _lastReadySlot = -1;
-            _lastFailureSlot = -1;
-            ClearSnapshots();
+            InjectedBakeFailure = null;
+            Sweep?.Invoke(true);
         }
 
-        private static MaterialPreparationStatus GetOrBakeCore<TConfig, TAdapter>(
-            in TConfig config,
-            BuiltInToneMappingKind kind,
-            TConfig[] readySnapshots,
-            TConfig[] failureSnapshots,
-            out Texture2D texture,
-            out Vector3 lutParams,
-            out string error,
-            out bool shouldReportFailure)
-            where TConfig : struct, ILutConfig, IEquatable<TConfig>
-            where TAdapter : struct, IBuiltInLutAdapter<TConfig>
+        // Counts a frame that tone maps, once however many cameras do, and drops entries unused for too long.
+        internal static void Tick() => Tick(Time.frameCount);
+
+        internal static void Tick(int frameCount)
         {
-            texture = null;
-            lutParams = default;
-            error = null;
-            shouldReportFailure = false;
+            if (frameCount == _lastFrameCount)
+                return;
+            _lastFrameCount = frameCount;
+            _frame++;
+            Sweep?.Invoke(false);
+        }
 
-            var configHash = config.ConfigHash;
+        internal static MaterialPreparationStatus GetOrBake<TConfig>(in TConfig config, out Texture2D lut, out string error)
+            where TConfig : struct, IStripLutConfig, IEquatable<TConfig> =>
+            Entries<TConfig, StripBaker<TConfig>>.GetOrBake(config, out lut, out error);
 
-            // Search successful results first. This is the normal per-frame path:
-            // a hit updates its LRU stamp and returns before validation, format
-            // probing, or baking occurs.
-            if (TryFind(in config, kind, configHash, readySnapshots, ReadyEntries, true,
-                    out texture, out lutParams, out error, out shouldReportFailure,
-                    out var cachedStatus))
-                return cachedStatus;
+        // The most recently used LUT of one mode.
+        internal static Texture2D GetCachedLut(ToneMappingMode mode) => mode switch
+        {
+            ToneMappingMode.GT => Entries<GTConfig, StripBaker<GTConfig>>.MostRecent,
+            ToneMappingMode.GT7 => Entries<GT7Config, StripBaker<GT7Config>>.MostRecent,
+            ToneMappingMode.AgX => Entries<AgXConfig, StripBaker<AgXConfig>>.MostRecent,
+            _ => null
+        };
 
-            // Search the separate negative cache second. A matching failure still
-            // avoids validation and baking, while preserving report-once behavior.
-            // This second lookup is necessary because failures must not consume a
-            // slot in the ready-texture table.
-            if (TryFind(in config, kind, configHash, failureSnapshots, FailureEntries, false,
-                    out texture, out lutParams, out error, out shouldReportFailure,
-                    out cachedStatus))
-                return cachedStatus;
+        private interface IBaker<TConfig>
+        {
+            // Ready, or why the config cannot be baked. Only a config the cache does not hold gets here.
+            MaterialPreparationStatus Check(in TConfig config, out string error);
+            // `texture` is null or an evicted entry's, which the baker reuses or replaces.
+            void Bake(in TConfig config, ref Texture2D texture);
+        }
 
-            // Only an entirely new request reaches this point. Keep the per-mapper
-            // validation in its adapter/config; the cache only coordinates the
-            // common ordering and storage policy.
-            var adapter = default(TAdapter);
-            if (!adapter.TryValidate(in config, out error))
+        private static class Entries<TConfig, TBaker>
+            where TConfig : struct, IEquatable<TConfig>
+            where TBaker : struct, IBaker<TConfig>
+        {
+            private struct Entry
             {
-                return StoreFailure(kind, configHash, failureSnapshots, in config,
-                    MaterialPreparationStatus.Invalid, error,
-                    out texture, out lutParams, out shouldReportFailure);
+                public TConfig Config;
+                public Texture2D Texture; // null once destroyed, also by something outside the cache
+                public int LastUsed;
             }
 
-            if (!LutBaker.TryChooseFormat(adapter.IsHdrOutput(in config), out _, out error))
+            private static readonly Entry[] Items = new Entry[Capacity];
+            // The last config whose bake threw, when, and its current retry window, so a transient failure (memory
+            // pressure, a device hiccup) does not switch tone mapping off until the next clear.
+            private static TConfig? _failed;
+            private static string _failedError;
+            private static int _failedFrame, _failedWindow;
+            private static bool _overflowLogged;
+
+            static Entries() => Sweep += Purge;
+
+            private static int MostRecentIndex()
             {
-                return StoreFailure(kind, configHash, failureSnapshots, in config,
-                    MaterialPreparationStatus.Unsupported, error,
-                    out texture, out lutParams, out shouldReportFailure);
+                var best = -1;
+                for (var i = 0; i < Capacity; i++)
+                    if (Items[i].Texture != null && (best < 0 || Items[i].LastUsed > Items[best].LastUsed))
+                        best = i;
+                return best;
             }
 
-            // Validation and format support have succeeded, so evicting the ready
-            // LRU is now permitted. Detach the old entry before baking so an
-            // unexpected exception cannot leave metadata pointing at a destroyed
-            // or partially replaced texture.
-            var slot = SelectSlot(ReadyEntries, true);
-            var candidate = ReadyEntries[slot].Texture;
-            ReadyEntries[slot] = default;
-            readySnapshots[slot] = default;
-
-            try
+            internal static Texture2D MostRecent
             {
-                adapter.Bake(in config, ref candidate);
-
-                candidate.name = "ToneMappingLUT";
-                candidate.hideFlags = HideFlags.HideAndDontSave;
-                lutParams = GetLutParams(config.LutSize);
-
-                readySnapshots[slot] = config;
-                ReadyEntries[slot] = new CacheEntry
+                get
                 {
-                    Kind = kind,
-                    ConfigHash = configHash,
-                    Texture = candidate,
-                    LutParams = lutParams,
-                    LastUsedStamp = NextAccessStamp(),
-                    LastUsedFrame = Time.frameCount,
-                    IsOccupied = true
-                };
-                _lastReadySlot = slot;
-                texture = candidate;
+                    var best = MostRecentIndex();
+                    return best < 0 ? null : Items[best].Texture;
+                }
+            }
+
+            internal static MaterialPreparationStatus GetOrBake(in TConfig config, out Texture2D texture, out string error)
+            {
+                error = null;
+                var slot = 0;
+                for (var i = 0; i < Capacity; i++)
+                {
+                    ref var item = ref Items[i];
+                    if (item.Texture != null && item.Config.Equals(config))
+                    {
+                        item.LastUsed = _frame;
+                        texture = item.Texture;
+                        return MaterialPreparationStatus.Ready;
+                    }
+
+                    // Replace an empty slot first, then the least recently used.
+                    if (Items[slot].Texture != null && (item.Texture == null || item.LastUsed < Items[slot].LastUsed))
+                        slot = i;
+                }
+
+                texture = null;
+                var retrying = _failed.HasValue && _failed.Value.Equals(config);
+                if (retrying && _frame - _failedFrame < _failedWindow)
+                {
+                    error = _failedError;
+                    return MaterialPreparationStatus.Invalid;
+                }
+
+                var baker = default(TBaker);
+                var status = baker.Check(in config, out error);
+                if (status != MaterialPreparationStatus.Ready)
+                    return status;
+
+                // Every slot was used this frame: more configs than Capacity are live, so one rebakes every frame.
+                if (Items[slot].Texture != null && Items[slot].LastUsed == _frame && !_overflowLogged)
+                {
+                    _overflowLogged = true;
+                    Debug.LogWarning($"Custom tone mapping: more than {Capacity} configurations of one mode are in use in the same frame, so LUTs are rebaked every frame. Use fewer distinct settings across cameras.");
+                }
+
+                // Detach the evicted entry first, so an exception cannot leave the cache pointing at it; the baker
+                // reuses its texture. A retry of a config that already failed bakes into a fresh texture instead and
+                // evicts only once it succeeds, so a persistent failure never destroys a working LUT.
+                if (!retrying)
+                {
+                    texture = Items[slot].Texture;
+                    Items[slot] = default;
+                }
+                try
+                {
+                    if (InjectedBakeFailure != null)
+                        throw InjectedBakeFailure;
+                    baker.Bake(in config, ref texture);
+                }
+                catch (Exception e)
+                {
+                    // The stack trace once per distinct failure, then the caller's once-only warning with the
+                    // message. The same failure again only lengthens the window.
+                    var message = $"Bake failed: {e.Message}";
+                    if (!retrying || message != _failedError)
+                        Debug.LogException(e);
+                    CoreUtils.Destroy(texture);
+                    texture = null;
+                    _failedWindow = retrying ? Math.Min(_failedWindow * 2, MaxFailureRetryFrames) : FailureRetryFrames;
+                    _failed = config;
+                    _failedFrame = _frame;
+                    _failedError = message;
+                    error = message;
+                    return MaterialPreparationStatus.Invalid;
+                }
+
+                if (retrying)
+                {
+                    CoreUtils.Destroy(Items[slot].Texture);
+                    _failed = null;
+                }
+                Items[slot] = new Entry { Config = config, Texture = texture, LastUsed = _frame };
                 return MaterialPreparationStatus.Ready;
             }
-            catch (Exception)
+
+            private static void Purge(bool all)
             {
-                CoreUtils.Destroy(candidate);
-                ReadyEntries[slot] = default;
-                readySnapshots[slot] = default;
-                throw;
-            }
-        }
-
-        private static bool TryFind<TConfig>(
-            in TConfig config,
-            BuiltInToneMappingKind kind,
-            uint configHash,
-            TConfig[] snapshots,
-            CacheEntry[] entries,
-            bool requireReadyTexture,
-            out Texture2D texture,
-            out Vector3 lutParams,
-            out string error,
-            out bool shouldReportFailure,
-            out MaterialPreparationStatus status)
-            where TConfig : struct, IEquatable<TConfig>
-        {
-            texture = null;
-            lutParams = default;
-            error = null;
-            shouldReportFailure = false;
-            status = default;
-
-            // The same lookup routine serves both tables. For ReadyEntries,
-            // requireReadyTexture rejects an empty/destroyed texture. For
-            // FailureEntries it is false because failures intentionally have no
-            // texture; the selected last-slot index also comes from the matching
-            // table.
-            var lastSlot = requireReadyTexture ? _lastReadySlot : _lastFailureSlot;
-            if (lastSlot >= 0 &&
-                Matches(ref entries[lastSlot], lastSlot, kind, configHash, snapshots,
-                    requireReadyTexture, in config))
-            {
-                return UseEntry(ref entries[lastSlot], lastSlot, requireReadyTexture,
-                    out texture, out lutParams, out error, out shouldReportFailure, out status);
-            }
-
-            for (var i = 0; i < Capacity; i++)
-            {
-                if (i == lastSlot)
-                    continue;
-
-                if (Matches(ref entries[i], i, kind, configHash, snapshots,
-                        requireReadyTexture, in config))
+                if (all)
                 {
-                    return UseEntry(ref entries[i], i, requireReadyTexture,
-                        out texture, out lutParams, out error, out shouldReportFailure, out status);
+                    _failed = null;
+                    _overflowLogged = false;
+                }
+                for (var i = 0; i < Capacity; i++)
+                {
+                    if (Items[i].Texture == null || (!all && _frame - Items[i].LastUsed <= StaleLifetimeFrames))
+                        continue;
+                    CoreUtils.Destroy(Items[i].Texture);
+                    Items[i] = default;
                 }
             }
-
-            return false;
         }
 
-        private static bool Matches<TConfig>(
-            ref CacheEntry entry,
-            int slot,
-            BuiltInToneMappingKind kind,
-            uint configHash,
-            TConfig[] snapshots,
-            bool requireReadyTexture,
-            in TConfig config)
-            where TConfig : struct, IEquatable<TConfig>
+        private static MaterialPreparationStatus CheckLut(bool valid, bool hdr, ref string error)
         {
-            // Hash and mapper kind are cheap filters. Exact typed equality is the
-            // final check because ConfigHash is only a lookup accelerator.
-            if (!entry.IsOccupied ||
-                entry.Kind != kind ||
-                entry.ConfigHash != configHash)
-                return false;
-
-            if (requireReadyTexture && entry.Texture == null)
-                return false;
-
-            return snapshots[slot].Equals(config);
+            if (!valid)
+                return MaterialPreparationStatus.Invalid;
+            return LutBaker.TryChooseFormat(hdr, out _, out error)
+                ? MaterialPreparationStatus.Ready
+                : MaterialPreparationStatus.Unsupported;
         }
 
-        private static bool UseEntry(
-            ref CacheEntry entry,
-            int slot,
-            bool isReady,
-            out Texture2D texture,
-            out Vector3 lutParams,
-            out string error,
-            out bool shouldReportFailure,
-            out MaterialPreparationStatus status)
+        private static void Name(Texture2D lut)
         {
-            // Access stamps are global across mapper kinds and both tables. LRU
-            // ordering is needed only within the selected table, so sharing the
-            // counter keeps the bookkeeping small without coupling capacities.
-            entry.LastUsedStamp = NextAccessStamp();
-            if (isReady)
-            {
-                entry.LastUsedFrame = Time.frameCount;
-                _lastReadySlot = slot;
-            }
-            else
-                _lastFailureSlot = slot;
-            texture = entry.Texture;
-            lutParams = entry.LutParams;
-            error = entry.FailureMessage;
-            shouldReportFailure = !isReady && !entry.FailureWasReported;
-            if (shouldReportFailure)
-                entry.FailureWasReported = true;
-            status = isReady ? MaterialPreparationStatus.Ready : entry.FailureStatus;
-            return true;
+            lut.name = "ToneMappingLUT";
+            lut.hideFlags = HideFlags.HideAndDontSave;
         }
 
-        private static int SelectSlot(CacheEntry[] entries, bool requireReadyTexture)
+        private readonly struct StripBaker<TConfig> : IBaker<TConfig> where TConfig : struct, IStripLutConfig
         {
-            // Prefer unused slots. A ready slot whose Unity texture was destroyed
-            // is also reusable; failure slots have no texture and only use the
-            // occupancy bit.
-            for (var i = 0; i < Capacity; i++)
-            {
-                if (!entries[i].IsOccupied ||
-                    (requireReadyTexture && entries[i].Texture == null))
-                {
-                    return i;
-                }
-            }
-
-            // All slots are occupied: replace the least recently used entry.
-            var slot = 0;
-            var oldestStamp = entries[0].LastUsedStamp;
-            for (var i = 1; i < Capacity; i++)
-            {
-                if (entries[i].LastUsedStamp < oldestStamp)
-                {
-                    oldestStamp = entries[i].LastUsedStamp;
-                    slot = i;
-                }
-            }
-
-            return slot;
+            public MaterialPreparationStatus Check(in TConfig config, out string error) =>
+                CheckLut(config.TryValidate(out error), config.HdrOutput, ref error);
+            public void Bake(in TConfig config, ref Texture2D lut) { config.BakeStripLut(ref lut); Name(lut); }
         }
-
-        private static MaterialPreparationStatus StoreFailure<TConfig>(
-            BuiltInToneMappingKind kind,
-            uint configHash,
-            TConfig[] snapshots,
-            in TConfig config,
-            MaterialPreparationStatus status,
-            string error,
-            out Texture2D texture,
-            out Vector3 lutParams,
-            out bool shouldReportFailure)
-            where TConfig : struct
-        {
-            // Negative results have their own capacity and never destroy or alter
-            // a generated ready LUT. Once this entry is evicted, the same bad
-            // request may report again; bounded memory is intentional.
-            var slot = SelectSlot(FailureEntries, false);
-            snapshots[slot] = config;
-            FailureEntries[slot] = new CacheEntry
-            {
-                Kind = kind,
-                ConfigHash = configHash,
-                LastUsedStamp = NextAccessStamp(),
-                IsOccupied = true,
-                FailureStatus = status,
-                FailureMessage = error,
-                FailureWasReported = true
-            };
-            _lastFailureSlot = slot;
-            texture = null;
-            lutParams = default;
-            shouldReportFailure = true;
-            return status;
-        }
-
-        private static ulong NextAccessStamp() => ++_accessStamp;
-
-        private static Vector3 GetLutParams(int lutSize)
-        {
-            var lutWidth = LutBaker.GetLutWidth(lutSize);
-            var lutHeight = LutBaker.GetLutHeight(lutSize);
-            return new Vector3(1.0f / lutWidth, 1.0f / lutHeight, lutHeight - 1);
-        }
-
     }
 }

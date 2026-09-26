@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- A failed LUT bake is retried, with a growing wait, instead of staying off until play mode changes
+- Baked LUTs are no longer evicted by switching modes, or expired by frames where only cameras without post-processing (such as UI cameras) render
+
 ## 1.2.6 - 2026-09-23
 
 ### Fixed

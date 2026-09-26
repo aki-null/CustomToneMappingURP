@@ -57,8 +57,8 @@ namespace CustomToneMapping.URP.Editor
                 return customLutTexture;
             }
 
-            // For GT7 and AgX modes, return the cached LUT from UrpBridge
-            return UrpBridge.CachedLutTexture;
+            // Baked modes: export this mode's own cache entry, not whichever mode baked last.
+            return UrpBridge.GetCachedLut(mode);
         }
 
         private static void ExportLutToExr(Texture2D lutTexture, ToneMappingMode mode2)

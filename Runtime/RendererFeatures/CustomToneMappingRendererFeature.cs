@@ -27,6 +27,9 @@ namespace CustomToneMapping.URP.RendererFeatures
             if (!renderingData.cameraData.postProcessEnabled)
                 return;
 
+            // A post-processed camera counts as a frame that ages the LUT cache, even with mode None, so unused LUTs
+            // still expire.
+            BuiltInLutCache.Tick();
             var customToneMapping = VolumeManager.instance?.stack?.GetComponent<CustomToneMapping>();
             if (customToneMapping == null || customToneMapping.mode.value == ToneMappingMode.None)
                 return;
