@@ -4,6 +4,7 @@
     "references": [
         "net.aki-null.CustomToneMapping.Baker",
         "net.aki-null.ToneMapping.URP",
+        "net.aki-null.ToneMapping.URP.RendererFeatures",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
         "Unity.Mathematics",

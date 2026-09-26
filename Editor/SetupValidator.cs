@@ -94,6 +94,9 @@ namespace CustomToneMapping.URP.Editor
             if (setupStatus.CustomToneMappingMode == ToneMappingMode.None)
                 return;
 
+            if (setupStatus.CustomToneMappingMode == ToneMappingMode.ACES2)
+                DrawAces2GradingValidation(profile, setupStatus.HasUrpModification);
+
             if (setupStatus.HasUrpModification)
             {
                 // URP has been modified - check for conflicts and proper setup
@@ -146,11 +149,56 @@ namespace CustomToneMapping.URP.Editor
             }
         }
 
+        // The ACES-aware grading notice on the ACES 2.0 component's own inspector, where the toggle lives. Only while
+        // the profile's mode is ACES 2.0, as on the Custom Tone Mapping inspector.
+        internal static void DrawAces2GradingValidation(VolumeComponent inspected)
+        {
+            var profile = OwningProfile(inspected);
+            var custom = Resolve<CustomToneMapping>(profile);
+            if (custom == null || custom.mode.value != ToneMappingMode.ACES2)
+                return;
+            DrawAces2GradingValidation(profile, HasUrpCustomToneMappingIntegration());
+        }
+
+        private static void DrawAces2GradingValidation(VolumeProfile profile, bool hasUrpModification)
+        {
+            var aces = Resolve<Aces2ToneMapping>(profile);
+            if (aces == null || !aces.acesAwareGrading.value)
+                return;
+
+            if (!hasUrpModification)
+            {
+                EditorGUILayout.HelpBox(
+                    "ACES 2.0 is grading in URP's standard spaces: ACES-aware grading needs the URP customization (README, Method 2). Customize URP, or turn off 'ACES-aware grading' on the ACES 2.0 Tone Mapping component.",
+                    MessageType.Warning);
+                DrawLink("Open README: Method 2", "https://github.com/aki-null/CustomToneMappingURP#method-2-urp-package-modification-recommended");
+            }
+            else if (GradesInLdr())
+            {
+                EditorGUILayout.HelpBox(UrpBridge.Aces2LdrGradingNotice + LdrExceptionNote, MessageType.Warning);
+                EditorGUILayout.Space();
+            }
+            else if (!UrpBridge.DeclaresAces2Grading(Shader.Find("Hidden/Universal Render Pipeline/LutBuilderHdr")))
+            {
+                EditorGUILayout.HelpBox(UrpBridge.Aces2StandardGradingNotice, MessageType.Warning);
+                DrawLink("Open the upgrade steps", UrpBridge.UrpCustomizationUpgradeUrl);
+            }
+        }
+
         // What the asset selects. URP still grades a camera in HDR when it outputs to an HDR display
         // (UniversalRenderPipeline.CreatePostProcessingData), which an edit-time check cannot know.
+        private const string LdrExceptionNote = " Cameras that output to an HDR display are not affected, because URP grades them in HDR.";
+
         private static bool GradesInLdr() =>
             GraphicsSettings.currentRenderPipeline is UniversalRenderPipelineAsset asset &&
             (asset.colorGradingMode != ColorGradingMode.HighDynamicRange || !asset.supportsHDR);
+
+        private static void DrawLink(string label, string url)
+        {
+            if (EditorGUILayout.LinkButton(label))
+                Application.OpenURL(url);
+            EditorGUILayout.Space();
+        }
 
         private static bool HasUrpCustomToneMappingIntegration()
         {

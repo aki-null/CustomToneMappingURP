@@ -333,7 +333,7 @@ namespace CustomToneMapping.Baker
         }
 
         // ARRI LogC3 (SUP 3.x, EI 1000), linear scene exposure factors.
-        private static class AlexaLogC
+        internal static class AlexaLogC
         {
             // ARRI specification; keep in sync with Runtime/URP/Shaders/LogC.hlsl.
             // Unity's Color.hlsl uses a different F and normally omits the linear toe.

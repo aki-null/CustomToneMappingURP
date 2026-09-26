@@ -344,7 +344,7 @@ namespace CustomToneMapping.Tests
                 {
                     source.SetPixel(0, 0, new Color(scene * paperWhite, scene * paperWhite, scene * paperWhite, 1));
                     source.Apply(false, false);
-                    return DrawTexel(material, _target).g;
+                    return Aces2TestSupport.Draw(material, _target).g;
                 }
 
                 // Detect peak is on by default: the display's 1000 nits.
@@ -363,28 +363,52 @@ namespace CustomToneMapping.Tests
             }
         }
 
-        // Draws a full-screen triangle with the material into the target and returns texel (0,0).
-        static Color DrawTexel(Material material, RenderTexture target)
+        // ACES 2.0 takes paper white as an exposure change before the Academy transform for the display peak, like
+        // URP's own ACES. The peak stays the display peak whatever the paper white.
+        [TestCase(1000, 250f)]
+        [TestCase(1000, 400f)]
+        [TestCase(250, 400f)]
+        public void ChainShaderAppliesPaperWhiteAsAces2Exposure(int peak, float paperWhite)
         {
-            using (var cmd = new CommandBuffer())
-            {
-                cmd.SetRenderTarget(target);
-                cmd.DrawProcedural(Matrix4x4.identity, material, 0, MeshTopology.Triangles, 3);
-                Graphics.ExecuteCommandBuffer(cmd);
-            }
-            var previous = RenderTexture.active;
-            var texture = new Texture2D(target.width, target.height, TextureFormat.RGBAFloat, false, true);
+            if (SystemInfo.graphicsDeviceType == GraphicsDeviceType.Null) Assert.Ignore("Requires a graphics device.");
+            var material = new Material(Shader.Find("Hidden/CustomToneMapChain"));
+            var source = new Texture2D(1, 1, TextureFormat.RGBAFloat, false, true);
             try
             {
-                RenderTexture.active = target;
-                texture.ReadPixels(new Rect(0, 0, target.width, target.height), 0, 0);
-                texture.Apply();
-                return texture.GetPixel(0, 0);
+                _stack.GetComponent<CustomToneMappingVolume>().mode.value = ToneMappingMode.ACES2;
+                var aces2 = _stack.GetComponent<Aces2ToneMapping>();
+                aces2.detectPeakNits.value = false;
+                aces2.targetPeakNits.value = peak;
+                Tonemapping.detectPaperWhite.value = false;
+                Tonemapping.paperWhite.value = paperWhite;
+
+                Assert.AreEqual(MaterialPreparationStatus.Ready, UrpBridge.PrepareMaterialWithStatus(material, Display));
+                material.EnableKeyword("HDR_COLORSPACE_CONVERSION");
+                material.EnableKeyword("LEGACY_RENDER_PATH");
+                material.SetInteger("_HDRColorspace", 1);
+                material.SetVector("_HDROutputLuminanceParams", new Vector4(0, 1000, paperWhite, 1f / paperWhite));
+                material.SetTexture("_MainTex", source);
+
+                var p = Aces2TestSupport.Parameters(peak, true);
+                foreach (var input in new[] { new Vector3(.18f, .18f, .18f), new Vector3(2, .5f, .1f), new Vector3(50, 50, 50) })
+                {
+                    source.SetPixel(0, 0, new Color(input.x * paperWhite, input.y * paperWhite, input.z * paperWhite, 1));
+                    source.Apply(false, false);
+                    var rec709 = math.mul(Aces2TestSupport.Rec2020ToRec709, Aces2TestSupport.ToDouble3(input));
+                    var expected = Aces2TestSupport.Aces2FromRec709(rec709 * (paperWhite / 100.0), p) * 100;
+                    var actual = Aces2TestSupport.Draw(material, _target);
+                    TestContext.WriteLine($"input {input}: {actual.r:F2} {actual.g:F2} {actual.b:F2} nits, expected {expected}");
+                    for (int c = 0; c < 3; c++)
+                    {
+                        Assert.That(actual[c], Is.EqualTo(expected[c]).Within(math.max(0.5, 2e-3 * expected[c])), $"input {input}, channel {c}");
+                        Assert.That(actual[c], Is.LessThanOrEqualTo(peak * 1.001f), "never above the peak");
+                    }
+                }
             }
             finally
             {
-                RenderTexture.active = previous;
-                UnityEngine.Object.DestroyImmediate(texture);
+                UnityEngine.Object.DestroyImmediate(source);
+                UnityEngine.Object.DestroyImmediate(material);
             }
         }
 

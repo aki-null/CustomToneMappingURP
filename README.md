@@ -18,16 +18,18 @@ Since adding new tone mapping functions to URP is not officially supported throu
   - [GT Tone Mapping](#gt-tone-mapping)
   - [GT7 Tone Mapping](#gt7-tone-mapping)
   - [AgX](#agx)
+  - [ACES 2.0](#aces-20)
   - [Custom LUT](#custom-lut)
 - [Integration Guide](#integration-guide)
   - [Method 1: Renderer Feature](#method-1-renderer-feature-no-urp-modification)
   - [Method 2: URP Package Modification](#method-2-urp-package-modification-recommended)
+  - [Upgrading the URP customization](#upgrading-the-urp-customization)
 - [Technical Details](#technical-details)
 - [License](#license)
 
 ## Features
 
-* Additional tone mapping algorithms
+* Additional tone mapping algorithms: GT, GT7, AgX and ACES 2.0
 * HDR display output compatibility
     * Runtime LUT generation supports variable peak brightness configurations
 * Custom LUT support
@@ -78,12 +80,13 @@ Alternatively, add it to your `Packages/manifest.json`:
    - Set to **Custom** when using the URP modification method
 2. Add a **Custom Tone Mapping** volume component and select a mode
 3. Add the mode-specific volume component to configure parameters
-   - Each mode requires its own dedicated volume component (e.g., **GT Tone Mapping**, **GT7 Tone Mapping**, **AgX Tone Mapping**, etc.)
+   - Each mode requires its own dedicated volume component (e.g., **GT Tone Mapping**, **GT7 Tone Mapping**, **AgX Tone Mapping**, **ACES 2.0 Tone Mapping**)
 
 ### HDR output
 
 - **Paper White** (URP's Tonemapping component) sets the brightness of SDR white and UI, in nits.
   - GT, GT7, AgX and Custom LUT show SDR white at Paper White.
+  - ACES 2.0 uses it as exposure, like URP's ACES. At 100 it matches the Academy output.
 - Set it under **HDR Output** in the **Custom Tone Mapping** inspector. URP's Tonemapping inspector hides it in the None and Custom modes.
 
 ## Modes
@@ -106,6 +109,12 @@ Designed by [Troy Sobotka](https://github.com/sobotka). The LUT generation is ba
 
 <img width="510" alt="AgX Tone Mapping Inspector" src="https://github.com/user-attachments/assets/b80e555b-f1e7-4536-9dac-6138ae04e201" />
 
+### ACES 2.0
+
+The Academy [ACES 2.0](https://github.com/aces-aswf/aces-core) Output Transform.
+
+- **ACES-aware grading** (on by default) grades in ACEScc/ACEScg, like URP's own ACES. It needs Method 2 with HDR Color Grading. Otherwise ACES 2.0 grades in URP's standard spaces, which looks different, and the inspector shows a notice.
+
 ### Custom LUT
 
 When Custom LUT is selected, assign a 2D Alexa LogC EI 1000 LUT strip in the Custom Tone Mapping component. For an `N`³ LUT, use an `N² × N` strip; the inspector can repair the import settings.
@@ -123,6 +132,7 @@ The Custom Tone Mapping Renderer Feature enables custom tone mapping without mod
 
 #### Limitations
 - Requires HDR and HDR Color Grading in the URP Asset. Cameras that grade in LDR are not tone mapped. HDR display output always grades in HDR.
+- ACES 2.0 always grades in URP's standard spaces.
 - Less efficient than native integration due to additional rendering pass overhead
 
 #### Setup
@@ -138,6 +148,7 @@ Modifying the URP package gives native integration with the best performance.
 
 - Supports both HDR and LDR Color Grading.
 - In Compatibility Mode, only HDR Color Grading is supported.
+- Customizations made before 1.3: see [Upgrading the URP customization](#upgrading-the-urp-customization).
 
 #### 1. Add Assembly Reference
 
@@ -232,6 +243,7 @@ If your URP version has no comma after `ACES`, add one.
      HLSLINCLUDE
 -        #pragma multi_compile_local _ _TONEMAP_ACES _TONEMAP_NEUTRAL
 +        #pragma multi_compile_local _ _TONEMAP_ACES _TONEMAP_NEUTRAL _TONEMAP_CUSTOM
++        #pragma multi_compile_local_fragment _ _CUSTOM_TONEMAP_ACES2
          #pragma multi_compile_local_fragment _ HDR_COLORSPACE_CONVERSION
 
          #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
@@ -335,9 +347,13 @@ If your URP version has no comma after `ACES`, add one.
                      }
 ```
 
+### Upgrading the URP customization
+
+Customizations made before 1.3 keep working, and ACES 2.0 grades in standard spaces with them. For ACES-aware grading, add the `_CUSTOM_TONEMAP_ACES2` pragma from [step 4](#4-update-lutbuilderhdr-shader) to `LutBuilderHdr.shader`. No other change is needed.
+
 ## Technical Details
 
-GT, GT7 and AgX are baked into a 3D LUT on the CPU when settings change. The GPU samples it during URP color grading.
+GT, GT7, AgX and the ACES 2.0 LDR path are baked into a 3D LUT on the CPU when settings change. The GPU samples it during URP color grading. ACES 2.0 under HDR color grading is instead evaluated per LUT texel on the GPU, from parameter tables baked on the CPU for the display peak.
 
 The LUT uses a 2D `N² × N` texture layout and ARRI LogC3 EI 1000 input encoding. The LUT size setting controls the quality, baking cost, and memory tradeoff.
 

@@ -1,5 +1,6 @@
 using System;
 using CustomToneMapping.Baker;
+using CustomToneMapping.Baker.ACES2;
 using CustomToneMapping.Baker.AgX;
 using CustomToneMapping.Baker.GT;
 using CustomToneMapping.Baker.GT7;
@@ -8,8 +9,8 @@ using UnityEngine.Rendering;
 
 namespace CustomToneMapping.URP
 {
-    // What the built-in modes bake, kept per config type (GT, GT7, AgX), up to Capacity configs each, least recently
-    // used replaced first.
+    // What the built-in modes bake, kept per config type (GT, GT7, AgX, the ACES 2.0 parameters, the ACES 2.0 LDR
+    // strip), up to Capacity configs each, least recently used replaced first.
     //
     // Entries age by frames that tone map, not by time: Tick runs only when a post-processed camera reaches the
     // package. While only cameras without post-processing render (a UI camera over a paused 3D view), nothing ages,
@@ -67,16 +68,25 @@ namespace CustomToneMapping.URP
             Sweep?.Invoke(false);
         }
 
+        // GT, GT7 and AgX.
         internal static MaterialPreparationStatus GetOrBake<TConfig>(in TConfig config, out Texture2D lut, out string error)
             where TConfig : struct, IStripLutConfig, IEquatable<TConfig> =>
-            Entries<TConfig, StripBaker<TConfig>>.GetOrBake(config, out lut, out error);
+            Entries<TConfig, StripBaker<TConfig>>.GetOrBake(config, out lut, out _, out error);
 
-        // The most recently used LUT of one mode.
+        internal static MaterialPreparationStatus GetOrBakeAces2Strip(int lutSize, out Texture2D lut, out string error) =>
+            Entries<int, Aces2StripBaker>.GetOrBake(lutSize, out lut, out _, out error);
+
+        internal static MaterialPreparationStatus GetOrBake(in Aces2Config config, out Texture2D atlas, out Vector4[] constants,
+            out string error) =>
+            Entries<Aces2Config, Aces2Baker>.GetOrBake(config, out atlas, out constants, out error);
+
+        // The most recently used LUT of one mode. For ACES 2.0 that is the LDR strip: its parameter atlas is no LUT.
         internal static Texture2D GetCachedLut(ToneMappingMode mode) => mode switch
         {
             ToneMappingMode.GT => Entries<GTConfig, StripBaker<GTConfig>>.MostRecent,
             ToneMappingMode.GT7 => Entries<GT7Config, StripBaker<GT7Config>>.MostRecent,
             ToneMappingMode.AgX => Entries<AgXConfig, StripBaker<AgXConfig>>.MostRecent,
+            ToneMappingMode.ACES2 => Entries<int, Aces2StripBaker>.MostRecent,
             _ => null
         };
 
@@ -84,8 +94,11 @@ namespace CustomToneMapping.URP
         {
             // Ready, or why the config cannot be baked. Only a config the cache does not hold gets here.
             MaterialPreparationStatus Check(in TConfig config, out string error);
-            // `texture` is null or an evicted entry's, which the baker reuses or replaces.
-            void Bake(in TConfig config, ref Texture2D texture);
+            // `texture` and `constants` are null or an evicted entry's, which the baker reuses or replaces. Only ACES 2.0
+            // has constants.
+            void Bake(in TConfig config, ref Texture2D texture, ref Vector4[] constants);
+            // Aging never drops the most recently used entry. Only for bakes too slow to repeat after a mode switch.
+            bool KeepsMostRecent { get; }
         }
 
         private static class Entries<TConfig, TBaker>
@@ -96,6 +109,7 @@ namespace CustomToneMapping.URP
             {
                 public TConfig Config;
                 public Texture2D Texture; // null once destroyed, also by something outside the cache
+                public Vector4[] Constants;
                 public int LastUsed;
             }
 
@@ -127,7 +141,8 @@ namespace CustomToneMapping.URP
                 }
             }
 
-            internal static MaterialPreparationStatus GetOrBake(in TConfig config, out Texture2D texture, out string error)
+            internal static MaterialPreparationStatus GetOrBake(in TConfig config, out Texture2D texture,
+                out Vector4[] constants, out string error)
             {
                 error = null;
                 var slot = 0;
@@ -138,6 +153,7 @@ namespace CustomToneMapping.URP
                     {
                         item.LastUsed = _frame;
                         texture = item.Texture;
+                        constants = item.Constants;
                         return MaterialPreparationStatus.Ready;
                     }
 
@@ -147,6 +163,7 @@ namespace CustomToneMapping.URP
                 }
 
                 texture = null;
+                constants = null;
                 var retrying = _failed.HasValue && _failed.Value.Equals(config);
                 if (retrying && _frame - _failedFrame < _failedWindow)
                 {
@@ -172,13 +189,14 @@ namespace CustomToneMapping.URP
                 if (!retrying)
                 {
                     texture = Items[slot].Texture;
+                    constants = Items[slot].Constants;
                     Items[slot] = default;
                 }
                 try
                 {
                     if (InjectedBakeFailure != null)
                         throw InjectedBakeFailure;
-                    baker.Bake(in config, ref texture);
+                    baker.Bake(in config, ref texture, ref constants);
                 }
                 catch (Exception e)
                 {
@@ -189,6 +207,7 @@ namespace CustomToneMapping.URP
                         Debug.LogException(e);
                     CoreUtils.Destroy(texture);
                     texture = null;
+                    constants = null;
                     _failedWindow = retrying ? Math.Min(_failedWindow * 2, MaxFailureRetryFrames) : FailureRetryFrames;
                     _failed = config;
                     _failedFrame = _frame;
@@ -202,7 +221,7 @@ namespace CustomToneMapping.URP
                     CoreUtils.Destroy(Items[slot].Texture);
                     _failed = null;
                 }
-                Items[slot] = new Entry { Config = config, Texture = texture, LastUsed = _frame };
+                Items[slot] = new Entry { Config = config, Texture = texture, Constants = constants, LastUsed = _frame };
                 return MaterialPreparationStatus.Ready;
             }
 
@@ -213,9 +232,10 @@ namespace CustomToneMapping.URP
                     _failed = null;
                     _overflowLogged = false;
                 }
+                var keep = !all && default(TBaker).KeepsMostRecent ? MostRecentIndex() : -1;
                 for (var i = 0; i < Capacity; i++)
                 {
-                    if (Items[i].Texture == null || (!all && _frame - Items[i].LastUsed <= StaleLifetimeFrames))
+                    if (Items[i].Texture == null || i == keep || (!all && _frame - Items[i].LastUsed <= StaleLifetimeFrames))
                         continue;
                     CoreUtils.Destroy(Items[i].Texture);
                     Items[i] = default;
@@ -242,7 +262,40 @@ namespace CustomToneMapping.URP
         {
             public MaterialPreparationStatus Check(in TConfig config, out string error) =>
                 CheckLut(config.TryValidate(out error), config.HdrOutput, ref error);
-            public void Bake(in TConfig config, ref Texture2D lut) { config.BakeStripLut(ref lut); Name(lut); }
+            public void Bake(in TConfig config, ref Texture2D lut, ref Vector4[] _) { config.BakeStripLut(ref lut); Name(lut); }
+            public bool KeepsMostRecent => false;
+        }
+
+        // Keyed by LUT size alone: LDR grading means SDR output, always Rec.709/D65 at 100 nits.
+        private readonly struct Aces2StripBaker : IBaker<int>
+        {
+            // The strip bake reads the parameter tables on the CPU, so it needs only the LUT format, not float sampling.
+            public MaterialPreparationStatus Check(in int lutSize, out string error) =>
+                CheckLut(LutLayout.TryValidateSize(lutSize, out error), false, ref error);
+            public void Bake(in int lutSize, ref Texture2D lut, ref Vector4[] _) { Aces2LutBaker.BakeStrip(lutSize, ref lut); Name(lut); }
+            // The strip runs the full transform per texel on the CPU. Only the current LUT Size is kept, so trying
+            // other sizes does not pile up strips: those age out like any other entry.
+            public bool KeepsMostRecent => true;
+        }
+
+        private readonly struct Aces2Baker : IBaker<Aces2Config>
+        {
+            public MaterialPreparationStatus Check(in Aces2Config config, out string error)
+            {
+                if (!config.TryValidate(out error))
+                    return MaterialPreparationStatus.Invalid;
+                return Aces2LutBaker.IsSupported(out error)
+                    ? MaterialPreparationStatus.Ready
+                    : MaterialPreparationStatus.Unsupported;
+            }
+
+            // Always a fresh atlas: it is not CPU-readable, so it cannot be refilled in place.
+            public void Bake(in Aces2Config config, ref Texture2D atlas, ref Vector4[] constants)
+            {
+                CoreUtils.Destroy(atlas);
+                atlas = Aces2LutBaker.Bake(config, out constants);
+            }
+            public bool KeepsMostRecent => false;
         }
     }
 }

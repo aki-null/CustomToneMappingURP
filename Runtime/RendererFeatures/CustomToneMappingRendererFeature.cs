@@ -16,7 +16,9 @@ namespace CustomToneMapping.URP.RendererFeatures
         public override void Create()
         {
             _pass?.Dispose();
-            _pass = new CustomToneMappingPass(shader)
+            // The serialized [Reload] reference is filled in for imported renderer assets. Features created at runtime
+            // (tests, scripts) fall back to Shader.Find.
+            _pass = new CustomToneMappingPass(shader != null ? shader : Shader.Find("Hidden/CustomToneMapChain"))
             {
                 renderPassEvent = RenderPassEvent.BeforeRenderingPrePasses + 1
             };

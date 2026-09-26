@@ -3,7 +3,10 @@
 ## Unreleased
 
 ### Added
+- ACES 2.0 Output Transform (Academy aces-core 069b0bc), SDR and HDR, through both integration methods
+- ACES-aware grading for ACES 2.0 through the URP customization, via one optional `_CUSTOM_TONEMAP_ACES2` pragma. Existing customizations work without it. Inspector and console notices explain when it is inactive.
 - The Custom Tone Mapping inspector shows URP's **Paper White** under HDR Output. URP hides it in the None and Custom modes.
+- An inspector for **ACES 2.0 Tone Mapping**, matching the other modes
 
 ### Changed
 - The GT and GT7 curve previews label the output axis: SDR white, or paper white in nits for HDR

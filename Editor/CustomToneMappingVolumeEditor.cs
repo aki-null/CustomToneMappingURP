@@ -232,16 +232,19 @@ namespace CustomToneMapping.URP.Editor
         {
             var currentMode = (ToneMappingMode)_mode.value.intValue;
 
-            // Only show LUT size for baked tone mapping modes
-            // CustomLUT uses the actual texture dimensions
-            if (currentMode != ToneMappingMode.None && currentMode != ToneMappingMode.CustomLUT)
-            {
+            // Show LUT Size only for modes that bake a LUT. Custom LUT uses the texture's own size. ACES 2.0 only
+            // uses it for its LDR strip (URP customization), which its tooltip says: the field stays, because the
+            // active URP asset can differ per quality level.
+            if (currentMode == ToneMappingMode.ACES2)
+                PropertyField(_lutSize, new GUIContent(_lutSize.displayName,
+                    "Size of the LUT baked for LDR color grading through the URP customization. HDR color grading evaluates ACES 2.0 per LUT texel and does not use it."));
+            else if (currentMode != ToneMappingMode.None && currentMode != ToneMappingMode.CustomLUT)
                 PropertyField(_lutSize);
-            }
 
             // Debug export section
             var lutTexture = _lutTexture.value.objectReferenceValue as Texture2D;
-            LutExporter.DrawDebugExportSection(currentMode, lutTexture);
+            if (currentMode != ToneMappingMode.ACES2)
+                LutExporter.DrawDebugExportSection(currentMode, lutTexture);
         }
     }
 }

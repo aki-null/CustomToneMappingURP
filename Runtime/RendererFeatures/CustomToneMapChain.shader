@@ -76,6 +76,7 @@ Shader "Hidden/CustomToneMapChain"
                 // The internal LUT contains colors that have been rotated to output space and scaled by paper white
                 float3 colorLinear = ReverseHDRProcessing(color);
                 #include "Packages/net.aki-null.tonemapping/Runtime/URP/Shaders/TonemapHdr.hlsl"
+                return colorLinear;
                 #else
                 // SDR Output
                 float3 colorLinear = color;

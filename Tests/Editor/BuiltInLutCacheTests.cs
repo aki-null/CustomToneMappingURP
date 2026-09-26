@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Text.RegularExpressions;
 using CustomToneMapping.Baker;
+using CustomToneMapping.Baker.ACES2;
 using CustomToneMapping.Baker.AgX;
 using CustomToneMapping.Baker.GT;
 using CustomToneMapping.Baker.GT7;
@@ -251,6 +252,22 @@ namespace CustomToneMapping.Tests
             Assert.AreSame(gt7Texture, BuiltInLutCache.GetCachedLut(ToneMappingMode.GT7));
             Assert.IsNull(BuiltInLutCache.GetCachedLut(ToneMappingMode.GT));
             Assert.IsNull(BuiltInLutCache.GetCachedLut(ToneMappingMode.AgX));
+        }
+
+        // The ACES 2.0 LDR strip is too slow to rebake after a mode switch, so aging keeps the most recent one. Strips
+        // of other LUT sizes still expire, so trying sizes does not pile them up.
+        [Test]
+        public void AgingKeepsOnlyTheMostRecentLdrStrip()
+        {
+            AssumeLutBakingSupported();
+            BuiltInLutCache.GetOrBakeAces2Strip(32, out var older, out _);
+            AdvanceFrames(1);
+            BuiltInLutCache.GetOrBakeAces2Strip(33, out var current, out _);
+            AdvanceFrames(BuiltInLutCache.StaleLifetimeFrames * 2);
+
+            Assert.IsTrue(older == null);
+            Assert.IsTrue(current != null);
+            Assert.AreSame(current, BuiltInLutCache.GetCachedLut(ToneMappingMode.ACES2));
         }
 
         // A bake that throws is remembered and retried after its window, which doubles while it keeps failing. Within
