@@ -52,7 +52,7 @@ Install via OpenUPM:
     ```
 - To update, specify the version you want:
     ```
-    openupm add net.aki-null.tonemapping@1.2.6
+    openupm add net.aki-null.tonemapping@1.3.0
     ```
 
 Install via UPM (Git URL):
