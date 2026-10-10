@@ -35,6 +35,9 @@ namespace CustomToneMapping.Baker.ACES2
         // breakpoints the values are linear, so each piece is taken from the port at two interior hues and checked at
         // a third. A broken invariant writes NaN instead of throwing: Aces2LutBaker.BuildPixels runs this as a job and
         // rejects NaN.
+        // The breakpoints move with the peak. An offline sweep of 100 to 10000 nits in 0.25-nit steps found at most two
+        // in any cell. The closest a third came was 0.017 degrees, near hue 192 at 10000 nits. Aces2Tests repeats a
+        // coarser sweep as a guard.
         internal static void BuildPieces(in ODTParams p, NativeArray<float4> pixels)
         {
             using var cuts = new NativeList<double>(2 * totalTableSize, Allocator.Temp);

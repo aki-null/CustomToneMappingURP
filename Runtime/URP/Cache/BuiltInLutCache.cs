@@ -113,12 +113,18 @@ namespace CustomToneMapping.URP
                 public int LastUsed;
             }
 
+            // A config whose bake threw, when, and its current retry window, so a transient failure (memory pressure, a
+            // device hiccup) does not switch tone mapping off until the next clear. One per failing config: configs that
+            // shared one record would reset each other's window, and every frame would rebake and log each of them.
+            private struct Failure
+            {
+                public TConfig Config;
+                public string Error;
+                public int Frame, Window; // Window 0: unused
+            }
+
             private static readonly Entry[] Items = new Entry[Capacity];
-            // The last config whose bake threw, when, and its current retry window, so a transient failure (memory
-            // pressure, a device hiccup) does not switch tone mapping off until the next clear.
-            private static TConfig? _failed;
-            private static string _failedError;
-            private static int _failedFrame, _failedWindow;
+            private static readonly Failure[] Failures = new Failure[Capacity];
             private static bool _overflowLogged;
 
             static Entries() => Sweep += Purge;
@@ -164,10 +170,11 @@ namespace CustomToneMapping.URP
 
                 texture = null;
                 constants = null;
-                var retrying = _failed.HasValue && _failed.Value.Equals(config);
-                if (retrying && _frame - _failedFrame < _failedWindow)
+                var failure = FailureIndex(config);
+                var retrying = failure >= 0;
+                if (retrying && _frame - Failures[failure].Frame < Failures[failure].Window)
                 {
-                    error = _failedError;
+                    error = Failures[failure].Error;
                     return MaterialPreparationStatus.Invalid;
                 }
 
@@ -203,15 +210,15 @@ namespace CustomToneMapping.URP
                     // The stack trace once per distinct failure, then the caller's once-only warning with the
                     // message. The same failure again only lengthens the window.
                     var message = $"Bake failed: {e.Message}";
-                    if (!retrying || message != _failedError)
+                    if (!retrying || message != Failures[failure].Error)
                         Debug.LogException(e);
                     CoreUtils.Destroy(texture);
                     texture = null;
                     constants = null;
-                    _failedWindow = retrying ? Math.Min(_failedWindow * 2, MaxFailureRetryFrames) : FailureRetryFrames;
-                    _failed = config;
-                    _failedFrame = _frame;
-                    _failedError = message;
+                    var window = retrying ? Math.Min(Failures[failure].Window * 2, MaxFailureRetryFrames) : FailureRetryFrames;
+                    if (!retrying)
+                        failure = FreeFailureIndex();
+                    Failures[failure] = new Failure { Config = config, Error = message, Frame = _frame, Window = window };
                     error = message;
                     return MaterialPreparationStatus.Invalid;
                 }
@@ -219,17 +226,45 @@ namespace CustomToneMapping.URP
                 if (retrying)
                 {
                     CoreUtils.Destroy(Items[slot].Texture);
-                    _failed = null;
+                    Failures[failure] = default;
                 }
                 Items[slot] = new Entry { Config = config, Texture = texture, Constants = constants, LastUsed = _frame };
                 return MaterialPreparationStatus.Ready;
+            }
+
+            private static int FailureIndex(in TConfig config)
+            {
+                for (var i = 0; i < Capacity; i++)
+                    if (Failures[i].Window > 0 && Failures[i].Config.Equals(config))
+                        return i;
+                return -1;
+            }
+
+            // An unused record, else the oldest whose window has ended (its config may be gone), else the oldest. A config
+            // that keeps failing inside a doubled window can be older than an abandoned one, and losing its record
+            // would reset its backoff, log it again and let its next attempt evict a working LUT.
+            private static int FreeFailureIndex()
+            {
+                int oldest = -1, oldestExpired = -1;
+                for (var i = 0; i < Capacity; i++)
+                {
+                    ref var failure = ref Failures[i];
+                    if (failure.Window == 0)
+                        return i;
+                    if (oldest < 0 || failure.Frame < Failures[oldest].Frame)
+                        oldest = i;
+                    if (_frame - failure.Frame >= failure.Window &&
+                        (oldestExpired < 0 || failure.Frame < Failures[oldestExpired].Frame))
+                        oldestExpired = i;
+                }
+                return oldestExpired >= 0 ? oldestExpired : oldest;
             }
 
             private static void Purge(bool all)
             {
                 if (all)
                 {
-                    _failed = null;
+                    Array.Clear(Failures, 0, Capacity);
                     _overflowLogged = false;
                 }
                 var keep = !all && default(TBaker).KeepsMostRecent ? MostRecentIndex() : -1;

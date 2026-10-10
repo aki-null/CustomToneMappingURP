@@ -121,14 +121,17 @@ namespace CustomToneMapping.Baker.ACES2
             public void Execute() => Aces2Atlas.BuildPieces(P, Pixels);
         }
 
+        // The tables start as NaN, and every entry is written, so an entry that a job never wrote (an exception inside
+        // a job only reaches the log) fails the check after its stage. A stage runs only on finite tables: a NaN hue
+        // would index the tables out of range.
         internal static ODTParams InitParametersParallel(double peakNits, in Chromaticities limitingPrimaries)
         {
             int n = totalTableSize, first = baseIndex, last = baseIndex + tableSize;
             var p = default(ODTParams);
-            p.TABLE_reach_M = new NativeArray<double>(n, Allocator.TempJob);
-            p.TABLE_hues = new NativeArray<double>(n, Allocator.TempJob);
-            p.TABLE_gamut_cusps = new NativeArray<double3>(n, Allocator.TempJob);
-            p.TABLE_upper_hull_gamma = new NativeArray<double>(n, Allocator.TempJob);
+            p.TABLE_reach_M = Unwritten(n, double.NaN);
+            p.TABLE_hues = Unwritten(n, double.NaN);
+            p.TABLE_gamut_cusps = Unwritten(n, new double3(double.NaN));
+            p.TABLE_upper_hull_gamma = Unwritten(n, double.NaN);
             try
             {
                 p.peakLuminance = peakNits;
@@ -146,14 +149,16 @@ namespace CustomToneMapping.Baker.ACES2
                 p.focus_dist = focus_distance + focus_distance * focus_distance_scaling * p.ts.log_peak;
                 p.lower_hull_gamma_inv = 1.0 / (1.14 + 0.07 * p.ts.log_peak);
 
-                using var hueTable = new NativeArray<double>(n, Allocator.TempJob);
+                using var hueTable = Unwritten(n, double.NaN);
                 using var rgbCorners = new NativeArray<double3>(totalCornerCount, Allocator.TempJob);
                 using var jmhCorners = new NativeArray<double3>(totalCornerCount, Allocator.TempJob);
-                // CornersJob takes the whole ODTParams, so the job safety system makes the other jobs wait for it. That is
-                // cheap: it only runs a few bisections.
-                var corners = new CornersJob { P = p, HueTable = hueTable, RgbCorners = rgbCorners, JMhCorners = jmhCorners }.Schedule();
-                var reach = new ReachJob { Reach = p.reach_params, LimitJMax = p.limit_J_max, Table = p.TABLE_reach_M }.Schedule(n, 16, corners);
-                var cusps = new CuspJob { HueTable = hueTable, RgbCorners = rgbCorners, JMhCorners = jmhCorners, Limit = p.limit_params, Cusps = p.TABLE_gamut_cusps }.Schedule(n, 16, corners);
+                // CornersJob finishes first and writes the hue table last, so checking that table covers the corners too,
+                // before the other jobs read them. The wait is cheap: it only runs a few bisections.
+                new CornersJob { P = p, HueTable = hueTable, RgbCorners = rgbCorners, JMhCorners = jmhCorners }.Schedule().Complete();
+                if (!AllFinite(hueTable))
+                    throw new InvalidOperationException(TableJobFailed);
+                var reach = new ReachJob { Reach = p.reach_params, LimitJMax = p.limit_J_max, Table = p.TABLE_reach_M }.Schedule(n, 16);
+                var cusps = new CuspJob { HueTable = hueTable, RgbCorners = rgbCorners, JMhCorners = jmhCorners, Limit = p.limit_params, Cusps = p.TABLE_gamut_cusps }.Schedule(n, 16);
                 JobHandle.CombineDependencies(reach, cusps).Complete();
 
                 p.TABLE_reach_M[0] = p.TABLE_reach_M[tableSize];
@@ -163,10 +168,14 @@ namespace CustomToneMapping.Baker.ACES2
                 cusp[last] = new double3(cusp[first][0], cusp[first][1], hueTable[last]);
                 for (int i = 0; i < n; i++)
                     p.TABLE_hues[i] = cusp[i][2];
+                if (!AllFinite(p.TABLE_reach_M) || !AllFinite(p.TABLE_gamut_cusps))
+                    throw new InvalidOperationException(TableJobFailed);
 
                 new GammaJob { P = p }.Schedule(n, 8).Complete();
                 p.TABLE_upper_hull_gamma[0] = p.TABLE_upper_hull_gamma[tableSize];
                 p.TABLE_upper_hull_gamma[last] = p.TABLE_upper_hull_gamma[first];
+                if (!AllFinite(p.TABLE_upper_hull_gamma))
+                    throw new InvalidOperationException(TableJobFailed);
                 p.hue_linearity_search_range = determine_hue_linearity_search_range(p.TABLE_hues);
                 return p;
             }
@@ -175,6 +184,40 @@ namespace CustomToneMapping.Baker.ACES2
                 Dispose(ref p);
                 throw;
             }
+        }
+
+        private static NativeArray<T> Unwritten<T>(int length, T nan) where T : struct
+        {
+            var array = new NativeArray<T>(length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+            for (int i = 0; i < length; i++)
+                array[i] = nan;
+            return array;
+        }
+
+        private const string TableJobFailed = "The ACES 2.0 parameter tables could not be built: a bake job failed (see the log).";
+
+        private static bool AllFinite(NativeArray<double> values)
+        {
+            for (int i = 0; i < values.Length; i++)
+                if (!math.isfinite(values[i]))
+                    return false;
+            return true;
+        }
+
+        private static bool AllFinite(NativeArray<double3> values)
+        {
+            for (int i = 0; i < values.Length; i++)
+                if (!math.all(math.isfinite(values[i])))
+                    return false;
+            return true;
+        }
+
+        private static bool AllFinite(NativeArray<float4> values)
+        {
+            for (int i = 0; i < values.Length; i++)
+                if (!math.all(math.isfinite(values[i])))
+                    return false;
+            return true;
         }
 
         internal static void Dispose(ref ODTParams p)
@@ -228,19 +271,13 @@ namespace CustomToneMapping.Baker.ACES2
         // bake fails instead of uploading a half-built atlas.
         internal static NativeArray<float4> BuildPixels(in ODTParams p)
         {
-            var pixels = new NativeArray<float4>(Aces2Atlas.Width * Aces2Atlas.Height, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-            for (int i = 0; i < pixels.Length; i++)
-                pixels[i] = new float4(float.NaN);
+            var pixels = Unwritten(Aces2Atlas.Width * Aces2Atlas.Height, new float4(float.NaN));
             var columns = new AtlasJob { P = p, Pixels = pixels, AInMax = Aces2Atlas.InputAMax(p) }.Schedule(Aces2Atlas.Width, 64);
             new PiecesJob { P = p, Pixels = pixels }.Schedule(columns).Complete();
-            for (int i = 0; i < pixels.Length; i++)
-            {
-                if (math.all(math.isfinite(pixels[i])))
-                    continue;
-                pixels.Dispose();
-                throw new InvalidOperationException("The ACES 2.0 parameter atlas could not be built: a bake job failed (see the log) or a hue piece broke its invariants.");
-            }
-            return pixels;
+            if (AllFinite(pixels))
+                return pixels;
+            pixels.Dispose();
+            throw new InvalidOperationException("The ACES 2.0 parameter atlas could not be built: a bake job failed (see the log) or a hue piece broke its invariants.");
         }
 
         // One display's parameters: the atlas and the uniform array that Bind hands to a material. The caller has

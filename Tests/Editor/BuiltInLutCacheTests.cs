@@ -325,6 +325,85 @@ namespace CustomToneMapping.Tests
             LogAssert.NoUnexpectedReceived();
         }
 
+        // Two failing configs in use every frame (two cameras) each keep their own window. After their first attempts,
+        // neither rebakes, logs again or evicts a working LUT from a full cache until its window ends.
+        [Test]
+        public void FailingConfigsBackOffIndependently()
+        {
+            AssumeLutBakingSupported();
+            var working = new GTConfig[BuiltInLutCache.Capacity];
+            for (var i = 0; i < working.Length; i++)
+            {
+                working[i] = CreateConfig(i * 0.01f);
+                Assert.AreEqual(MaterialPreparationStatus.Ready, BuiltInLutCache.GetOrBake(working[i], out _, out _));
+                AdvanceFrames(1);
+            }
+
+            var failing = new[] { CreateConfig(0.25f), CreateConfig(0.26f) };
+            BuiltInLutCache.InjectedBakeFailure = new InvalidOperationException("broken");
+            foreach (var config in failing)
+            {
+                LogAssert.Expect(LogType.Exception, new Regex("broken"));
+                Assert.AreEqual(MaterialPreparationStatus.Invalid, BuiltInLutCache.GetOrBake(config, out _, out _));
+            }
+
+            // The first attempts took slots: bring every working LUT back, so the cache is full again.
+            BuiltInLutCache.InjectedBakeFailure = null;
+            AdvanceFrames(1);
+            var textures = new Texture2D[working.Length];
+            for (var i = 0; i < working.Length; i++)
+                Assert.AreEqual(MaterialPreparationStatus.Ready, BuiltInLutCache.GetOrBake(working[i], out textures[i], out _));
+
+            // Any bake from here on would throw and log.
+            BuiltInLutCache.InjectedBakeFailure = new InvalidOperationException("broken");
+            for (var frame = 0; frame < 3; frame++)
+            {
+                AdvanceFrames(1);
+                foreach (var config in failing)
+                    Assert.AreEqual(MaterialPreparationStatus.Invalid, BuiltInLutCache.GetOrBake(config, out _, out _));
+                for (var i = 0; i < working.Length; i++)
+                {
+                    Assert.AreEqual(MaterialPreparationStatus.Ready, BuiltInLutCache.GetOrBake(working[i], out var current, out _));
+                    Assert.AreSame(textures[i], current, $"working LUT {i}");
+                }
+            }
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        // With every failure record in use, a new failure takes the record of an ended window, not the oldest failure:
+        // a config retried into a doubled window can be older than one that was abandoned.
+        [Test]
+        public void NewFailureTakesAnEndedWindowsRecord()
+        {
+            AssumeLutBakingSupported();
+            var window = BuiltInLutCache.FailureRetryFrames;
+            BuiltInLutCache.InjectedBakeFailure = new InvalidOperationException("broken");
+
+            // Fails, then fails its retry the same way (not logged again): its window doubles to 2 * window.
+            var persistent = CreateConfig(0.20f);
+            LogAssert.Expect(LogType.Exception, new Regex("broken"));
+            Assert.AreEqual(MaterialPreparationStatus.Invalid, BuiltInLutCache.GetOrBake(persistent, out _, out _));
+            AdvanceFrames(window);
+            Assert.AreEqual(MaterialPreparationStatus.Invalid, BuiltInLutCache.GetOrBake(persistent, out _, out _));
+
+            // Fails one frame later, so it is newer, and is never requested again: its window ends first.
+            AdvanceFrames(1);
+            LogAssert.Expect(LogType.Exception, new Regex("broken"));
+            Assert.AreEqual(MaterialPreparationStatus.Invalid, BuiltInLutCache.GetOrBake(CreateConfig(0.21f), out _, out _));
+            AdvanceFrames(window);
+
+            // Two fill the free records, and the third needs one of the first two.
+            for (var i = 0; i < BuiltInLutCache.Capacity - 1; i++)
+            {
+                LogAssert.Expect(LogType.Exception, new Regex("broken"));
+                Assert.AreEqual(MaterialPreparationStatus.Invalid, BuiltInLutCache.GetOrBake(CreateConfig(0.22f + i * 0.01f), out _, out _));
+            }
+
+            // Still inside its window: no bake, which would log.
+            Assert.AreEqual(MaterialPreparationStatus.Invalid, BuiltInLutCache.GetOrBake(persistent, out _, out _));
+            LogAssert.NoUnexpectedReceived();
+        }
+
         [Test]
         public void PersistentFailureIsLoggedOnce()
         {

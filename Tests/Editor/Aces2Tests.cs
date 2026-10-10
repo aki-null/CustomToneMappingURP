@@ -80,6 +80,27 @@ namespace CustomToneMapping.Tests
             }
         }
 
+        // The hue breakpoints move with the peak, and a cell with a third breakpoint fails the bake. A coarse guard over
+        // the peaks a display can report. The finer offline sweep is described in Aces2Atlas.BuildPieces.
+        [Test]
+        public void AtlasBuildsAcrossThePeakRange()
+        {
+            const int steps = 128;
+            for (int i = 0; i <= steps; i++)
+            {
+                double peak = Aces2Config.MinPeakNits * math.pow(Aces2Config.MaxPeakNits / Aces2Config.MinPeakNits, i / (double)steps);
+                var p = Aces2LutBaker.InitParametersParallel(peak, Aces2LutBaker.Primaries(true));
+                try
+                {
+                    Assert.DoesNotThrow(() => Aces2LutBaker.BuildPixels(p).Dispose(), $"{peak:F1} nits");
+                }
+                finally
+                {
+                    Aces2LutBaker.Dispose(ref p);
+                }
+            }
+        }
+
         [TestCase(100)] [TestCase(1000)] [TestCase(4000)] [TestCase(10000)]
         public void PortMatchesTheAcademyReference(int peak)
         {

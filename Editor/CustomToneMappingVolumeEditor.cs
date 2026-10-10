@@ -52,10 +52,11 @@ namespace CustomToneMapping.URP.Editor
             if (_mode == null)
                 return;
 
-            SetupValidator.DrawSetupValidation(target as VolumeComponent);
+            var profile = SetupValidator.OwningProfile(target as VolumeComponent);
+            SetupValidator.DrawSetupValidation(profile);
 
             DrawModeSelection();
-            DrawPaperWhite();
+            DrawPaperWhite(profile);
 
             // Draw additional properties section (LUT Size, Debug Export)
             if (showAdditionalProperties)
@@ -101,13 +102,12 @@ namespace CustomToneMapping.URP.Editor
 
         // Paper white lives on URP's Tonemapping component, whose inspector hides it in the None and Custom modes. So it
         // is drawn here, for this profile's override only, like any volume inspector.
-        private void DrawPaperWhite()
+        private void DrawPaperWhite(VolumeProfile profile)
         {
             var mode = (ToneMappingMode)_mode.value.intValue;
             if (!PlayerSettings.allowHDRDisplaySupport || mode == ToneMappingMode.None)
                 return;
 
-            var profile = SetupValidator.OwningProfile(target as VolumeComponent);
             if (profile == null)
                 return;
 

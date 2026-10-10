@@ -123,8 +123,13 @@ namespace CustomToneMapping.Tests
             finally
             {
                 GraphicsSettings.defaultRenderPipeline = previousPipeline; QualitySettings.renderPipeline = previousQuality;
+                // The profile's components are objects of their own.
+                if (profile != null)
+                    foreach (var component in profile.components)
+                        if (component != null) UnityEngine.Object.DestroyImmediate(component);
                 foreach (var o in new UnityEngine.Object[] { cameraObject, volumeObject, target, lut, profile, feature, capture, asset, renderer })
                     if (o != null) UnityEngine.Object.DestroyImmediate(o);
+                UrpBridge.ClearCache(); // the ACES 2.0 atlas this test baked
             }
         }
     }

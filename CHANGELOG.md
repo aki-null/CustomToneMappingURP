@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.0 - 2026-09-26
 
 ### Added
 - ACES 2.0 Output Transform (Academy aces-core 069b0bc), SDR and HDR, through both integration methods

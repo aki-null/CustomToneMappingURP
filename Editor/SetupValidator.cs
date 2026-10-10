@@ -31,12 +31,19 @@ namespace CustomToneMapping.URP.Editor
             return string.IsNullOrEmpty(path) ? null : AssetDatabase.LoadAssetAtPath<VolumeProfile>(path);
         }
 
-        // Use the edited profile. When it lacks the component, another volume supplies the value, so use the stack. A
-        // profile created at runtime has no asset path and also uses the stack.
-        private static T Resolve<T>(VolumeProfile profile) where T : VolumeComponent
+        // One parameter from the edited profile when its active override ticks it. Otherwise another volume supplies
+        // the value, so use the stack. A profile created at runtime has no asset path and also uses the stack.
+        private static TParameter Resolve<T, TParameter>(VolumeProfile profile, System.Func<T, TParameter> parameter)
+            where T : VolumeComponent where TParameter : VolumeParameter
         {
-            if (profile != null && profile.TryGet<T>(out var fromProfile))
-                return fromProfile;
+            if (profile != null && profile.TryGet<T>(out var own) && own.active && parameter(own).overrideState)
+                return parameter(own);
+            var applied = StackComponent<T>();
+            return applied != null ? parameter(applied) : null;
+        }
+
+        private static T StackComponent<T>() where T : VolumeComponent
+        {
             try
             {
                 return VolumeManager.instance.stack?.GetComponent<T>();
@@ -49,18 +56,13 @@ namespace CustomToneMapping.URP.Editor
         }
 
         // URP's Tonemapping as the volume stack last resolved it.
-        internal static Tonemapping StackTonemapping() => Resolve<Tonemapping>(null);
+        internal static Tonemapping StackTonemapping() => StackComponent<Tonemapping>();
 
         // Paper white for HDR curve previews: this profile's if its active override ticks it, else the one in effect,
         // else URP's default. The editor cannot detect it from a display.
         internal static float PaperWhite(VolumeComponent inspected)
         {
-            var profile = OwningProfile(inspected);
-            var tonemapping = profile != null && profile.TryGet<Tonemapping>(out var own) && own.active &&
-                              own.paperWhite.overrideState
-                ? own
-                : StackTonemapping();
-            var paperWhite = tonemapping?.paperWhite.value ?? 0f;
+            var paperWhite = Resolve(OwningProfile(inspected), (Tonemapping t) => t.paperWhite)?.value ?? 0f;
             return paperWhite > 0f ? paperWhite : 300f;
         }
 
@@ -72,13 +74,13 @@ namespace CustomToneMapping.URP.Editor
                 HasUrpModification = HasUrpCustomToneMappingIntegration()
             };
 
-            var tonemapping = Resolve<Tonemapping>(profile);
-            if (tonemapping != null && tonemapping.mode != null)
-                status.TonemappingMode = tonemapping.mode.value;
+            var tonemappingMode = Resolve(profile, (Tonemapping t) => t.mode);
+            if (tonemappingMode != null)
+                status.TonemappingMode = tonemappingMode.value;
 
-            var customTonemapping = Resolve<CustomToneMapping>(profile);
-            if (customTonemapping != null && customTonemapping.mode != null)
-                status.CustomToneMappingMode = customTonemapping.mode.value;
+            var customMode = Resolve(profile, (CustomToneMapping c) => c.mode);
+            if (customMode != null)
+                status.CustomToneMappingMode = customMode.value;
 
             // Check if renderer feature is set up
             status.HasRendererFeature = HasCustomTonemapperRendererFeature();
@@ -86,9 +88,9 @@ namespace CustomToneMapping.URP.Editor
             return status;
         }
 
-        internal static void DrawSetupValidation(VolumeComponent inspected)
+        // `profile` is OwningProfile of the inspected component.
+        internal static void DrawSetupValidation(VolumeProfile profile)
         {
-            var profile = OwningProfile(inspected);
             var setupStatus = GetSetupStatus(profile);
 
             if (setupStatus.CustomToneMappingMode == ToneMappingMode.None)
@@ -154,16 +156,14 @@ namespace CustomToneMapping.URP.Editor
         internal static void DrawAces2GradingValidation(VolumeComponent inspected)
         {
             var profile = OwningProfile(inspected);
-            var custom = Resolve<CustomToneMapping>(profile);
-            if (custom == null || custom.mode.value != ToneMappingMode.ACES2)
+            if (Resolve(profile, (CustomToneMapping c) => c.mode)?.value != ToneMappingMode.ACES2)
                 return;
             DrawAces2GradingValidation(profile, HasUrpCustomToneMappingIntegration());
         }
 
         private static void DrawAces2GradingValidation(VolumeProfile profile, bool hasUrpModification)
         {
-            var aces = Resolve<Aces2ToneMapping>(profile);
-            if (aces == null || !aces.acesAwareGrading.value)
+            if (Resolve(profile, (Aces2ToneMapping a) => a.acesAwareGrading)?.value != true)
                 return;
 
             if (!hasUrpModification)
@@ -178,11 +178,21 @@ namespace CustomToneMapping.URP.Editor
                 EditorGUILayout.HelpBox(UrpBridge.Aces2LdrGradingNotice + LdrExceptionNote, MessageType.Warning);
                 EditorGUILayout.Space();
             }
-            else if (!UrpBridge.DeclaresAces2Grading(Shader.Find("Hidden/Universal Render Pipeline/LutBuilderHdr")))
+            else if (!UrpBridge.DeclaresAces2Grading(LutBuilderHdr()))
             {
                 EditorGUILayout.HelpBox(UrpBridge.Aces2StandardGradingNotice, MessageType.Warning);
                 DrawLink("Open the upgrade steps", UrpBridge.UrpCustomizationUpgradeUrl);
             }
+        }
+
+        // Found once, not on every repaint. A destroyed shader compares equal to null, so it is found again.
+        private static Shader _lutBuilderHdr;
+
+        private static Shader LutBuilderHdr()
+        {
+            if (_lutBuilderHdr == null)
+                _lutBuilderHdr = Shader.Find("Hidden/Universal Render Pipeline/LutBuilderHdr");
+            return _lutBuilderHdr;
         }
 
         // What the asset selects. URP still grades a camera in HDR when it outputs to an HDR display

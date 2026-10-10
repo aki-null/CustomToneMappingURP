@@ -1,10 +1,6 @@
-using CustomToneMapping.Baker;
 using CustomToneMapping.Baker.ACES2;
-using AgXConfig = CustomToneMapping.Baker.AgX.AgXConfig;
 using AgXVolume = CustomToneMapping.URP.AgXToneMapping;
-using GT7Config = CustomToneMapping.Baker.GT7.GT7Config;
 using GT7Volume = CustomToneMapping.URP.GT7ToneMapping;
-using GTConfig = CustomToneMapping.Baker.GT.GTConfig;
 using GTVolume = CustomToneMapping.URP.GT.GTToneMapping;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -280,6 +276,8 @@ namespace CustomToneMapping.URP
             SetKeyword(material, Aces2GradingKeyword, false);
         }
 
+        // Writes only a change. Most calls change nothing: the chain material keeps its keywords from frame to frame,
+        // and URP never resets them.
         private static void SetKeyword(Material material, string keyword, bool enabled)
         {
             if (material.IsKeywordEnabled(keyword) == enabled)
