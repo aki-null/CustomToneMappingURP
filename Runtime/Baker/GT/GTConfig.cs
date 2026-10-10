@@ -2,12 +2,15 @@ using System;
 
 namespace CustomToneMapping.Baker.GT
 {
-    public struct GTConfig : ILutConfig, IEquatable<GTConfig>
+    public struct GTConfig : ILutConfig, IStripLutConfig, IEquatable<GTConfig>
     {
         public float TargetPeakNits;
         public bool IsHdrOutput;
         public float ReferenceLuminance;
         public float SdrPaperWhite;
+
+        // HDR only: URP's paper white, the nits of LUT value 1.0.
+        public float PaperWhiteNits;
 
         // Curve parameters
         public float Contrast; // a parameter
@@ -18,13 +21,22 @@ namespace CustomToneMapping.Baker.GT
 
         public int LutSize { get; set; }
 
+        // Nits of framebuffer 1.0. In HDR, SDR white lands on PaperWhiteNits, so midtones match SDR.
+        // PaperWhiteNits == SdrPaperWhite gives the reference mapping.
+        private float EffectiveReferenceLuminance =>
+            IsHdrOutput ? ReferenceLuminance * PaperWhiteNits / SdrPaperWhite : ReferenceLuminance;
+
+        // Curve peak in framebuffer units: the display peak (HDR) or SDR white (SDR).
+        public float FramebufferTarget => (IsHdrOutput ? TargetPeakNits : SdrPaperWhite) / EffectiveReferenceLuminance;
+
+        // Framebuffer to LUT value, the same in SDR and HDR.
+        // HDR peak = FramebufferTarget * OutputScale * PaperWhiteNits = TargetPeakNits.
+        public float OutputScale => 1.0f / (SdrPaperWhite / ReferenceLuminance);
+
         public bool TryValidate(out string error)
         {
-            if (!LutLayout.IsValidSize(LutSize))
-            {
-                error = $"LUT size must be between {LutLayout.MinSize} and {LutLayout.MaxSize}.";
+            if (!LutLayout.TryValidateSize(LutSize, out error))
                 return false;
-            }
 
             if (!ValidationPrimitives.IsFinite(TargetPeakNits) ||
                 !ValidationPrimitives.IsFinite(ReferenceLuminance) ||
@@ -49,8 +61,13 @@ namespace CustomToneMapping.Baker.GT
                 return false;
             }
 
-            var physicalTarget = IsHdrOutput ? TargetPeakNits : SdrPaperWhite;
-            var framebufferTarget = physicalTarget / ReferenceLuminance;
+            if (IsHdrOutput && (!ValidationPrimitives.IsFinite(PaperWhiteNits) || PaperWhiteNits <= 0.0f))
+            {
+                error = "GT tone mapping needs a positive paper white for HDR output.";
+                return false;
+            }
+
+            var framebufferTarget = FramebufferTarget;
             var denominator = (framebufferTarget - LinearSectionStart) *
                               (1.0f - LinearSectionLength);
 
@@ -67,38 +84,22 @@ namespace CustomToneMapping.Baker.GT
             return true;
         }
 
+        bool IStripLutConfig.HdrOutput => IsHdrOutput;
+        void IStripLutConfig.BakeStripLut(ref UnityEngine.Texture2D texture) => GTLutBaker.BakeStripLut(this, ref texture);
+
         public bool Equals(GTConfig other)
         {
             return HashUtil.FloatBitsEqual(TargetPeakNits, other.TargetPeakNits) &&
                    IsHdrOutput == other.IsHdrOutput &&
                    HashUtil.FloatBitsEqual(ReferenceLuminance, other.ReferenceLuminance) &&
                    HashUtil.FloatBitsEqual(SdrPaperWhite, other.SdrPaperWhite) &&
+                   HashUtil.FloatBitsEqual(PaperWhiteNits, other.PaperWhiteNits) &&
                    HashUtil.FloatBitsEqual(Contrast, other.Contrast) &&
                    HashUtil.FloatBitsEqual(LinearSectionStart, other.LinearSectionStart) &&
                    HashUtil.FloatBitsEqual(LinearSectionLength, other.LinearSectionLength) &&
                    HashUtil.FloatBitsEqual(BlackTightness, other.BlackTightness) &&
                    HashUtil.FloatBitsEqual(BlackOffset, other.BlackOffset) &&
                    LutSize == other.LutSize;
-        }
-
-        public uint ConfigHash
-        {
-            get
-            {
-                var h = HashUtil.Fnv1A32Offset;
-                h = HashUtil.Hash32(h, 0u); // tone map type: GT
-                h = HashUtil.Hash32(h, IsHdrOutput ? 1u : 0u);
-                h = HashUtil.Hash32(h, TargetPeakNits);
-                h = HashUtil.Hash32(h, ReferenceLuminance);
-                h = HashUtil.Hash32(h, SdrPaperWhite);
-                h = HashUtil.Hash32(h, Contrast);
-                h = HashUtil.Hash32(h, LinearSectionStart);
-                h = HashUtil.Hash32(h, LinearSectionLength);
-                h = HashUtil.Hash32(h, BlackTightness);
-                h = HashUtil.Hash32(h, BlackOffset);
-                h = HashUtil.Hash32(h, LutSize);
-                return h;
-            }
         }
     }
 }

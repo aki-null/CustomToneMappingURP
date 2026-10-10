@@ -22,6 +22,8 @@ namespace CustomToneMapping.Tests
                 IsHdrOutput = isHdr,
                 ReferenceLuminance = 100.0f,
                 SdrPaperWhite = 100.0f,
+                // HDR output is the reference mapping when URP's paper white equals SDR white.
+                PaperWhiteNits = PaperWhite,
 
                 // Default curve parameters
                 Contrast = 1.0f,
@@ -59,7 +61,11 @@ namespace CustomToneMapping.Tests
             return mapper;
         }
 
-        protected override float3 ApplyToneMap(GTToneMapping mapper, float3 input) => mapper.ApplyToneMap(input);
+        private const float PaperWhite = 100.0f;
+
+        // The reference's HDR output is in framebuffer units (ReferenceLuminance nits). The LUT is in paper white units.
+        protected override float3 ApplyToneMap(GTToneMapping mapper, float3 input) =>
+            mapper.ApplyToneMap(input) * (mapper.IsHDROutput ? PaperWhite / 100.0f : 1.0f);
 
         [Test]
         public void TestAgainstReferenceData_SDR()

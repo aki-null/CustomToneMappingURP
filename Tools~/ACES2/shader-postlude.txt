@@ -1,0 +1,78 @@
+// Hand-written, emitted after the generated functions. It replaces the CTL's outputTransform_fwd (as
+// Aces2OutputTransformAP1), tonemap_and_compress_fwd, chroma_compress_fwd and gamut_compress_fwd with the same math,
+// rearranged around the per-display tables that Aces2Atlas bakes from the reference port: the per-hue values (rows 0,
+// 1, 3, 4) and the powers the tonescale and chroma compression take of the input J (row 2, indexed by the input
+// achromatic response A). The reference-vector tests check the result.
+//
+// Mobile register budget: URP's LutBuilderHdr inlines this after its own grading, and the combination sits right at
+// the register count that still allows full occupancy on mobile GPUs. Small structural changes here (branch
+// attributes, where the table lookups happen, what stays live) can double the register count and halve occupancy.
+// Baking the chroma compression's toe constants into another row, for one, saved 2% of the cycles and cost that.
+// Re-check that LutBuilderHdr compiles to full occupancy after changing this file.
+float4 Aces2ARow(float A)
+{
+    float x = saturate(A * Aces2InvAInMax()) * (ACES2_ATLAS_WIDTH - 1);
+    int i = min((int)x, ACES2_ATLAS_WIDTH - 2);
+    return lerp(Aces2AtlasTexel(i, 2), Aces2AtlasTexel(i + 1, 2), x - i);
+}
+
+// CTL chroma_compress_fwd. jt = Aces2ARow(input A): tonemapped J, pow(nJ, gamma), pow(tonemapped J / J, gamma), nJ.
+// reachNorm = Aces2ReachNorm(hue): reach M and the chroma-compression norm.
+float3 chroma_compress_fwd(float M, float h, float4 jt, float2 reachNorm, ODTParams p)
+{
+    float M_compr = M;
+    [branch] if (M != 0.0)
+    {
+        float nJ = jt.w, snJ = max(0.0, 1.0 - nJ);
+        float Mnorm = reachNorm.y, invMnorm = 1.0 / Mnorm;
+        float limit = jt.y * reachNorm.x * invMnorm;
+        float toe_limit = limit - 0.001;
+        float toe_snJ_sat = snJ * p.sat;
+        float toe_sqrt_nJ_sat_thr = sqrt(nJ * nJ + p.sat_thr);
+        float toe_nJ_compr = nJ * p.compr;
+        M_compr = M * jt.z * invMnorm;
+        M_compr = limit - toe(limit - M_compr, toe_limit, toe_snJ_sat, toe_sqrt_nJ_sat_thr, false);
+        M_compr = toe(M_compr, limit, toe_nJ_compr, snJ, false);
+        M_compr = M_compr * Mnorm;
+    }
+    return float3(jt.x, M_compr, h);
+}
+
+// CTL gamut_compress_fwd, with the hue parameters from the atlas. Its early outs keep J (clamped to 0) and drop M.
+float3 gamut_compress_fwd(float3 JMh, HueDependentGamutParams hdp, ODTParams p)
+{
+    const float J = JMh[0];
+    const float M = JMh[1];
+    float3 result = float3(max(J, 0.), 0., JMh[2]);
+    [branch] if (J > 0. && M >= 0. && J <= p.limit_J_max)
+        result = compress_gamut(JMh, J, p, hdp, false);
+    return result;
+}
+
+// CTL outputTransform_fwd on ACEScg. The CTL clamps in AP1 between two matrices (AP0 -> AP1 and back); starting from
+// AP1 and fusing AP1 -> AP0 into the input model's RGB -> CAM16 matrix leaves one. CTL Aab_to_JMh would compute the
+// input J, but row 2 is indexed by A directly, and the tonescale and gamut compression keep hue unchanged. The output
+// side (CTL JMh_to_Aab) rebuilds the hue direction with cos and sin instead of carrying Aab.yz / M through the
+// transform: two fewer live values, which the register budget above needs.
+float3 Aces2OutputTransformAP1(float3 ap1, ODTParams p)
+{
+    float3 rgb_m = mul(clamp(ap1, 0., p.ts.forward_limit), Aces2AP1ToCAM16());
+    float3 rgb_a = float3(post_adaptation_cone_response_compression_fwd(rgb_m[0]),
+                          post_adaptation_cone_response_compression_fwd(rgb_m[1]),
+                          post_adaptation_cone_response_compression_fwd(rgb_m[2]));
+    float3 Aab = mul(rgb_a, p.input_params.MATRIX_cone_response_to_Aab);
+    // CTL Aab_to_JMh: no colour when A <= 0.
+    bool lit = Aab[0] > 0.;
+    float A = lit ? Aab[0] : 0.;
+    float M = lit ? sqrt(Aab[1] * Aab[1] + Aab[2] * Aab[2]) : 0.;
+    // GLSL leaves atan(0, 0) undefined. The CTL's C atan2 returns 0 there. atan2 stays within [-180, 180] degrees, so
+    // the CTL's wrap_to_360 reduces to one add (its fmod is the identity here).
+    float h = M > 0. ? radians_to_degrees(atan2(Aab[2], Aab[1])) : 0.;
+    h = h < 0. ? h + 360. : h;
+    float3 tonemappedJMh = chroma_compress_fwd(M, h, Aces2ARow(A), Aces2ReachNorm(h), p);
+    float3 compressedJMh = gamut_compress_fwd(tonemappedJMh, init_HueDependentGamutParams(h, p), p);
+    float hr = compressedJMh[2] * (3.14159265358979323846 / 180.0);
+    float3 AabOut = float3(J_to_Achromatic_n(compressedJMh[0], p.limit_params.inv_cz),
+                           compressedJMh[1] * float2(cos(hr), sin(hr)));
+    return Aab_to_RGB(AabOut, p.limit_params);
+}

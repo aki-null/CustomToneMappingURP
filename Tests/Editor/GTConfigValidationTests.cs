@@ -18,7 +18,7 @@ namespace CustomToneMapping.Tests
             var volume = ScriptableObject.CreateInstance<CustomToneMapping.URP.GT.GTToneMapping>();
             volume.linearSectionLength.value = 1.0f;
 
-            var config = volume.ToConfig(volume.targetPeakNits.value, false, 32);
+            var config = volume.ToConfig(volume.targetPeakNits.value, 300.0f, false, 32);
             Object.DestroyImmediate(volume);
 
             Assert.IsFalse(config.TryValidate(out var error));
@@ -33,7 +33,7 @@ namespace CustomToneMapping.Tests
             volume.referenceLuminance.value = 1000.0f;
             volume.linearSectionStart.value = 0.1f;
 
-            var config = volume.ToConfig(volume.targetPeakNits.value, false, 32);
+            var config = volume.ToConfig(volume.targetPeakNits.value, 300.0f, false, 32);
             Object.DestroyImmediate(volume);
 
             Assert.IsFalse(config.TryValidate(out var error));

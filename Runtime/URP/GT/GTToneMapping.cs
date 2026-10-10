@@ -5,7 +5,7 @@ using UnityEngine.Rendering;
 
 namespace CustomToneMapping.URP.GT
 {
-    [Serializable, VolumeComponentMenu("Post-processing/Custom/GT Tone Mapping")]
+    [Serializable, VolumeComponentMenu("Post-processing/GT Tone Mapping")]
     public sealed class GTToneMapping : VolumeComponent
     {
         public const float DefaultReferenceLuminance = 100.0f;
@@ -19,10 +19,11 @@ namespace CustomToneMapping.URP.GT
         [Tooltip("Automatically detect display peak luminance for HDR.")]
         public BoolParameter detectPeakNits = new(true);
 
+        // Not blended between volumes: every distinct peak is a new LUT bake.
         [Tooltip("Target peak luminance in nits for HDR tonemapping.")]
-        public ClampedFloatParameter targetPeakNits = new(1000.0f, 100.0f, 10000.0f);
+        public NoInterpClampedFloatParameter targetPeakNits = new(1000.0f, 100.0f, 10000.0f);
 
-        [Tooltip("SDR paper white (nits).")]
+        [Tooltip("SDR white in nits, as the curve assumes it (Polyphony uses 250). Higher values darken midtones and leave more room for highlights. HDR keeps these midtones, with SDR white at URP's Paper White.")]
         [InspectorName("SDR Paper White")]
         public ClampedFloatParameter sdrPaperWhite = new(DefaultSdrPaperWhite, 50.0f, 1000.0f);
 
@@ -44,7 +45,7 @@ namespace CustomToneMapping.URP.GT
         [Tooltip("Black level offset (b parameter)")]
         public ClampedFloatParameter blackOffset = new(DefaultBlackOffset, 0.0f, 0.1f);
 
-        public GTConfig ToConfig(float peakNits, bool isHdrOutput, int lutSize)
+        public GTConfig ToConfig(float peakNits, float paperWhiteNits, bool isHdrOutput, int lutSize)
         {
             return new GTConfig
             {
@@ -52,6 +53,8 @@ namespace CustomToneMapping.URP.GT
                 IsHdrOutput = isHdrOutput,
                 ReferenceLuminance = referenceLuminance.value,
                 SdrPaperWhite = sdrPaperWhite.value,
+                // SDR ignores paper white. SdrPaperWhite keeps SDR bakes independent of it.
+                PaperWhiteNits = isHdrOutput ? paperWhiteNits : sdrPaperWhite.value,
                 Contrast = contrast.value,
                 LinearSectionStart = linearSectionStart.value,
                 LinearSectionLength = linearSectionLength.value,

@@ -10,9 +10,10 @@ Shader "Hidden/CustomToneMapping/Tests/LogCSampling"
         #include "Packages/net.aki-null.tonemapping/Runtime/URP/Shaders/TonemapParams.hlsl"
         float3 _TestInput;
 
-        // Isolate HDR LUT addressing from display gamut rotation and paper white.
+        // Isolate HDR LUT addressing from display gamut rotation and paper white. TonemapParams.hlsl already
+        // brings in the real RotateRec2020ToOutputSpace, so neutralise the snippet's call with a macro instead.
         #define PaperWhite 1.0
-        float3 RotateRec2020ToOutputSpace(float3 color) { return color; }
+        #define RotateRec2020ToOutputSpace(color) (color)
 
         float4 FragSdr(Varyings varyings) : SV_Target
         {
@@ -24,6 +25,7 @@ Shader "Hidden/CustomToneMapping/Tests/LogCSampling"
         float3 SampleHdr(float3 colorLinear)
         {
             #include "Packages/net.aki-null.tonemapping/Runtime/URP/Shaders/TonemapHdr.hlsl"
+            return colorLinear;
         }
 
         float4 FragHdr(Varyings varyings) : SV_Target

@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.3.0 - 2026-10-10
+
+### Added
+- ACES 2.0 tone mapping for SDR and HDR through both integration methods, with a dedicated volume inspector
+- ACES-aware grading through the updated URP customization ([upgrade steps](README.md#upgrading-the-urp-customization)). The Renderer Feature and older customizations use standard grading.
+- URP's Paper White controls in the Custom Tone Mapping inspector
+
+### Changed
+- GT Tone Mapping moved to Post-processing, alongside the other modes
+- GT and GT7 curve previews show output units
+- Failed LUT bakes retry with increasing delays
+- The Renderer Feature requires HDR color grading. HDR display output remains supported regardless of the asset's grading mode.
+- Cached LUTs survive mode switches and frames without post-processing
+- GT/GT7 Target Peak Nits and AgX Max Nits no longer blend between volumes
+- GT/GT7 SDR Paper White also controls HDR midtones; default midtones are unchanged
+
+### Breaking
+- Removed AgX SDR Paper White. Use URP's Paper White instead.
+
+### Fixed
+- GT, GT7 and AgX use the manual peak when detection reports none
+- GT, GT7 and AgX HDR output no longer exceeds the target peak. Remove previous workarounds such as lowering the target peak or setting Paper White to 100.
+- The Renderer Feature now uses URP's paper white, correcting HDR exposure
+- AgX supports HDR displays dimmer than paper white by scaling output to the peak
+- Zero paper white disables custom tone mapping with a warning instead of producing invalid output
+
 ## 1.2.6 - 2026-09-23
 
 ### Fixed

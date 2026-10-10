@@ -88,31 +88,30 @@ namespace CustomToneMapping.Baker.GT7
         private GT7Config _cfg;
 
         // Derived values
-        private float _sdrCorrectionFactor; // 1.0 for HDR, 1/FB(PaperWhite) for SDR
+        private float _outputScale; // framebuffer to LUT value
         private float _framebufferLuminanceTarget; // peak in FB scale
+        private float _ucsReferenceLuminance; // nits of framebuffer 1.0, for the UCS conversions
         private float _framebufferLuminanceTargetUcs; // luminance in chosen UCS
         private GTToneMappingCurveV2 _curve;
 
         public void InitializeAsHdr(GT7Config cfg)
         {
-            _cfg = cfg;
-            _sdrCorrectionFactor = 1.0f;
-            InitializeParameters(cfg.TargetPeakNits);
+            cfg.IsHdrOutput = true;
+            Initialize(cfg);
         }
 
         public void InitializeAsSdr(GT7Config cfg)
         {
-            _cfg = cfg;
-            // 1.0 (linear) corresponds to ReferenceLuminance cd/m^2.
-            // Paper white is expressed in cd/m^2. Convert to FB space then invert.
-            var fbPaperWhite = PhysicalToFrameBuffer(cfg.SdrPaperWhite, cfg.ReferenceLuminance);
-            _sdrCorrectionFactor = 1.0f / fbPaperWhite;
-            InitializeParameters(cfg.SdrPaperWhite);
+            cfg.IsHdrOutput = false;
+            Initialize(cfg);
         }
 
-        private void InitializeParameters(float physicalTargetLuminance)
+        private void Initialize(GT7Config cfg)
         {
-            _framebufferLuminanceTarget = PhysicalToFrameBuffer(physicalTargetLuminance, _cfg.ReferenceLuminance);
+            _cfg = cfg;
+            _outputScale = cfg.OutputScale;
+            _framebufferLuminanceTarget = cfg.FramebufferTarget;
+            _ucsReferenceLuminance = cfg.EffectiveReferenceLuminance;
 
             _curve = default;
             _curve.Initialize(_framebufferLuminanceTarget,
@@ -123,7 +122,7 @@ namespace CustomToneMapping.Baker.GT7
 
             // Compute UCS luminance of target
             var targetRgb = new float3(_framebufferLuminanceTarget);
-            var ucs = RgbToUcs(targetRgb, _cfg);
+            var ucs = RgbToUcs(targetRgb);
             _framebufferLuminanceTargetUcs = ucs.x; // first component is luminance (I or Jz)
         }
 
@@ -131,7 +130,7 @@ namespace CustomToneMapping.Baker.GT7
         public float3 ApplyToneMap(float3 rgb)
         {
             // Convert to UCS
-            var ucs = RgbToUcs(rgb, _cfg);
+            var ucs = RgbToUcs(rgb);
 
             // Per-channel mapping (skew)
             var skewedRgb = new float3(
@@ -140,7 +139,7 @@ namespace CustomToneMapping.Baker.GT7
                 _curve.Evaluate(rgb.z)
             );
 
-            var skewedUcs = RgbToUcs(skewedRgb, _cfg);
+            var skewedUcs = RgbToUcs(skewedRgb);
 
             var normalizedLuminance =
                 _framebufferLuminanceTargetUcs > 1e-10f ? ucs.x / _framebufferLuminanceTargetUcs : 0.0f;
@@ -152,12 +151,12 @@ namespace CustomToneMapping.Baker.GT7
                 ucs.z * chromaScale
             );
 
-            var scaledRgb = UcsToRgb(scaledUcs, _cfg);
+            var scaledRgb = UcsToRgb(scaledUcs);
 
             var blended = (1.0f - _cfg.BlendRatio) * skewedRgb + _cfg.BlendRatio * scaledRgb;
             var clamped = math.min(blended, new float3(_framebufferLuminanceTarget));
 
-            return _sdrCorrectionFactor * clamped;
+            return _outputScale * clamped;
         }
 
         public bool IsHDROutput => _cfg.IsHdrOutput;
@@ -218,29 +217,29 @@ namespace CustomToneMapping.Baker.GT7
 
         #region UCS Conversions
 
-        private static float3 RgbToUcs(float3 rgb, GT7Config cfg)
+        private float3 RgbToUcs(float3 rgb)
         {
-            switch (cfg.Ucs)
+            switch (_cfg.Ucs)
             {
                 case UcsMode.ICtCp:
-                    return RgbToICtCp(rgb, cfg.ReferenceLuminance);
+                    return RgbToICtCp(rgb, _ucsReferenceLuminance);
                 case UcsMode.JzAzBz:
-                    return RgbToJzazbz(rgb, cfg.ReferenceLuminance, cfg.JzazbzExponentScaleFactor);
+                    return RgbToJzazbz(rgb, _ucsReferenceLuminance, _cfg.JzazbzExponentScaleFactor);
                 default:
-                    return RgbToICtCp(rgb, cfg.ReferenceLuminance);
+                    return RgbToICtCp(rgb, _ucsReferenceLuminance);
             }
         }
 
-        private static float3 UcsToRgb(float3 ucs, GT7Config cfg)
+        private float3 UcsToRgb(float3 ucs)
         {
-            switch (cfg.Ucs)
+            switch (_cfg.Ucs)
             {
                 case UcsMode.ICtCp:
-                    return ICtCpToRgb(ucs, cfg.ReferenceLuminance);
+                    return ICtCpToRgb(ucs, _ucsReferenceLuminance);
                 case UcsMode.JzAzBz:
-                    return JzazbzToRgb(ucs, cfg.ReferenceLuminance, cfg.JzazbzExponentScaleFactor);
+                    return JzazbzToRgb(ucs, _ucsReferenceLuminance, _cfg.JzazbzExponentScaleFactor);
                 default:
-                    return ICtCpToRgb(ucs, cfg.ReferenceLuminance);
+                    return ICtCpToRgb(ucs, _ucsReferenceLuminance);
             }
         }
 

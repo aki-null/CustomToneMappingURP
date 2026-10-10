@@ -160,11 +160,11 @@ namespace CustomToneMapping.URP.Editor
                 return;
 
             var config = BuildPreviewConfig();
-            var previewPeak = _previewHdr ? _previewPeakNits : config.SdrPaperWhite;
-            config.TargetPeakNits = previewPeak;
+            config.TargetPeakNits = _previewHdr ? _previewPeakNits : config.SdrPaperWhite;
             config.IsHdrOutput = _previewHdr;
+            config.PaperWhiteNits = SetupValidator.PaperWhite(target as VolumeComponent);
 
-            GT7CurvePreview.DrawCurvePreview(rect, config, previewPeak, _previewHdr);
+            GT7CurvePreview.DrawCurvePreview(rect, config);
         }
 
         private GT7Config BuildPreviewConfig()

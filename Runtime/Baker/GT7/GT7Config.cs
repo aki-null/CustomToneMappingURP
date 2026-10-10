@@ -2,7 +2,7 @@ using System;
 
 namespace CustomToneMapping.Baker.GT7
 {
-    public struct GT7Config : ILutConfig, IEquatable<GT7Config>
+    public struct GT7Config : ILutConfig, IStripLutConfig, IEquatable<GT7Config>
     {
         // Target peak luminance in cd/m^2 for HDR initialize
         public float TargetPeakNits; // e.g., 1000, 2000, etc.
@@ -12,6 +12,9 @@ namespace CustomToneMapping.Baker.GT7
 
         // cd/m^2
         public float SdrPaperWhite;
+
+        // HDR only: URP's paper white, the nits of LUT value 1.0.
+        public float PaperWhiteNits;
 
         // UCS selection (ICtCp or Jzazbz)
         public UcsMode Ucs;
@@ -30,40 +33,25 @@ namespace CustomToneMapping.Baker.GT7
         public float FadeStart;
         public float FadeEnd;
 
-        public uint ConfigHash
-        {
-            get
-            {
-                var h = HashUtil.Fnv1A32Offset;
-                h = HashUtil.Hash32(h, 1u); // tone map type: GT7
-                h = HashUtil.Hash32(h, IsHdrOutput ? 1u : 0u);
-                h = HashUtil.Hash32(h, TargetPeakNits);
-                h = HashUtil.Hash32(h, ReferenceLuminance);
-                h = HashUtil.Hash32(h, SdrPaperWhite);
-                h = HashUtil.Hash32(h, (int)Ucs);
-                h = HashUtil.Hash32(h, JzazbzExponentScaleFactor);
-                h = HashUtil.Hash32(h, CurveAlpha);
-                h = HashUtil.Hash32(h, CurveMidPoint);
-                h = HashUtil.Hash32(h, CurveLinearSection);
-                h = HashUtil.Hash32(h, CurveToeStrength);
-                h = HashUtil.Hash32(h, BlendRatio);
-                h = HashUtil.Hash32(h, FadeStart);
-                h = HashUtil.Hash32(h, FadeEnd);
-                h = HashUtil.Hash32(h, LutSize);
-                return h;
-            }
-        }
-
         public bool IsHdrOutput { get; set; }
         public int LutSize { get; set; }
 
+        // Nits of framebuffer 1.0, also used by the UCS conversions. In HDR, SDR white lands on PaperWhiteNits, so
+        // midtones match SDR. PaperWhiteNits == SdrPaperWhite gives the reference mapping.
+        public float EffectiveReferenceLuminance =>
+            IsHdrOutput ? ReferenceLuminance * PaperWhiteNits / SdrPaperWhite : ReferenceLuminance;
+
+        // Curve peak in framebuffer units: the display peak (HDR) or SDR white (SDR).
+        public float FramebufferTarget => (IsHdrOutput ? TargetPeakNits : SdrPaperWhite) / EffectiveReferenceLuminance;
+
+        // Framebuffer to LUT value, the same in SDR and HDR.
+        // HDR peak = FramebufferTarget * OutputScale * PaperWhiteNits = TargetPeakNits.
+        public float OutputScale => 1.0f / (SdrPaperWhite / ReferenceLuminance);
+
         public bool TryValidate(out string error)
         {
-            if (!LutLayout.IsValidSize(LutSize))
-            {
-                error = $"LUT size must be between {LutLayout.MinSize} and {LutLayout.MaxSize}.";
+            if (!LutLayout.TryValidateSize(LutSize, out error))
                 return false;
-            }
 
             if (!ValidationPrimitives.IsFinite(TargetPeakNits) ||
                 !ValidationPrimitives.IsFinite(ReferenceLuminance) ||
@@ -99,6 +87,12 @@ namespace CustomToneMapping.Baker.GT7
                 return false;
             }
 
+            if (IsHdrOutput && (!ValidationPrimitives.IsFinite(PaperWhiteNits) || PaperWhiteNits <= 0.0f))
+            {
+                error = "GT7 tone mapping needs a positive paper white for HDR output.";
+                return false;
+            }
+
             var k = (CurveLinearSection - 1.0f) / (CurveAlpha - 1.0f);
             if (!ValidationPrimitives.IsFinite(k) || Math.Abs(k) <= 1e-6f)
             {
@@ -110,11 +104,15 @@ namespace CustomToneMapping.Baker.GT7
             return true;
         }
 
+        bool IStripLutConfig.HdrOutput => IsHdrOutput;
+        void IStripLutConfig.BakeStripLut(ref UnityEngine.Texture2D texture) => GT7LutBaker.BakeStripLut(this, ref texture);
+
         public bool Equals(GT7Config other)
         {
             return HashUtil.FloatBitsEqual(TargetPeakNits, other.TargetPeakNits) &&
                    HashUtil.FloatBitsEqual(ReferenceLuminance, other.ReferenceLuminance) &&
                    HashUtil.FloatBitsEqual(SdrPaperWhite, other.SdrPaperWhite) &&
+                   HashUtil.FloatBitsEqual(PaperWhiteNits, other.PaperWhiteNits) &&
                    Ucs == other.Ucs &&
                    HashUtil.FloatBitsEqual(JzazbzExponentScaleFactor, other.JzazbzExponentScaleFactor) &&
                    HashUtil.FloatBitsEqual(CurveAlpha, other.CurveAlpha) &&

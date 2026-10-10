@@ -20,7 +20,53 @@ namespace CustomToneMapping.URP.Editor
             public ToneMappingMode CustomToneMappingMode;
         }
 
-        private static SetupStatus GetSetupStatus()
+        // The inspector describes the profile being edited. VolumeManager's resolved stack reflects whichever
+        // profile is active, so reading it would hide every message while an inactive profile is edited, and could
+        // show warnings for another profile's mode.
+        internal static VolumeProfile OwningProfile(VolumeComponent inspected)
+        {
+            if (inspected == null)
+                return null;
+            var path = AssetDatabase.GetAssetPath(inspected);
+            return string.IsNullOrEmpty(path) ? null : AssetDatabase.LoadAssetAtPath<VolumeProfile>(path);
+        }
+
+        // One parameter from the edited profile when its active override ticks it. Otherwise another volume supplies
+        // the value, so use the stack. A profile created at runtime has no asset path and also uses the stack.
+        private static TParameter Resolve<T, TParameter>(VolumeProfile profile, System.Func<T, TParameter> parameter)
+            where T : VolumeComponent where TParameter : VolumeParameter
+        {
+            if (profile != null && profile.TryGet<T>(out var own) && own.active && parameter(own).overrideState)
+                return parameter(own);
+            var applied = StackComponent<T>();
+            return applied != null ? parameter(applied) : null;
+        }
+
+        private static T StackComponent<T>() where T : VolumeComponent
+        {
+            try
+            {
+                return VolumeManager.instance.stack?.GetComponent<T>();
+            }
+            catch (System.Exception)
+            {
+                // The volume stack may not be initialized in edit mode.
+                return null;
+            }
+        }
+
+        // URP's Tonemapping as the volume stack last resolved it.
+        internal static Tonemapping StackTonemapping() => StackComponent<Tonemapping>();
+
+        // Paper white for HDR curve previews: this profile's if its active override ticks it, else the one in effect,
+        // else URP's default. The editor cannot detect it from a display.
+        internal static float PaperWhite(VolumeComponent inspected)
+        {
+            var paperWhite = Resolve(OwningProfile(inspected), (Tonemapping t) => t.paperWhite)?.value ?? 0f;
+            return paperWhite > 0f ? paperWhite : 300f;
+        }
+
+        private static SetupStatus GetSetupStatus(VolumeProfile profile)
         {
             var status = new SetupStatus
             {
@@ -28,29 +74,13 @@ namespace CustomToneMapping.URP.Editor
                 HasUrpModification = HasUrpCustomToneMappingIntegration()
             };
 
-            try
-            {
-                var stack = VolumeManager.instance.stack;
-                if (stack != null)
-                {
-                    var tonemapping = stack.GetComponent<Tonemapping>();
-                    if (tonemapping != null && tonemapping.mode != null)
-                    {
-                        status.TonemappingMode = tonemapping.mode.value;
-                    }
+            var tonemappingMode = Resolve(profile, (Tonemapping t) => t.mode);
+            if (tonemappingMode != null)
+                status.TonemappingMode = tonemappingMode.value;
 
-                    var customTonemapping = stack.GetComponent<CustomToneMapping>();
-                    if (customTonemapping != null && customTonemapping.mode != null)
-                    {
-                        status.CustomToneMappingMode = customTonemapping.mode.value;
-                    }
-                }
-            }
-            catch (System.Exception)
-            {
-                // Ignore exceptions during volume stack access in edit mode
-                // Volume stack might not be properly initialized
-            }
+            var customMode = Resolve(profile, (CustomToneMapping c) => c.mode);
+            if (customMode != null)
+                status.CustomToneMappingMode = customMode.value;
 
             // Check if renderer feature is set up
             status.HasRendererFeature = HasCustomTonemapperRendererFeature();
@@ -58,12 +88,16 @@ namespace CustomToneMapping.URP.Editor
             return status;
         }
 
-        internal static void DrawSetupValidation()
+        // `profile` is OwningProfile of the inspected component.
+        internal static void DrawSetupValidation(VolumeProfile profile)
         {
-            var setupStatus = GetSetupStatus();
+            var setupStatus = GetSetupStatus(profile);
 
             if (setupStatus.CustomToneMappingMode == ToneMappingMode.None)
                 return;
+
+            if (setupStatus.CustomToneMappingMode == ToneMappingMode.ACES2)
+                DrawAces2GradingValidation(profile, setupStatus.HasUrpModification);
 
             if (setupStatus.HasUrpModification)
             {
@@ -105,7 +139,75 @@ namespace CustomToneMapping.URP.Editor
                         MessageType.Warning);
                     EditorGUILayout.Space();
                 }
+                else if (GradesInLdr())
+                {
+                    EditorGUILayout.HelpBox(
+                        "Custom tone mapping is off: the URP Asset grades in LDR, and the Renderer Feature works only with HDR grading. " +
+                        "Cameras that output to an HDR display are still tone mapped, because URP grades them in HDR.\n\n" +
+                        "Enable HDR and HDR Color Grading in the URP Asset, or customize URP to support LDR grading (README, Method 2).",
+                        MessageType.Error);
+                    EditorGUILayout.Space();
+                }
             }
+        }
+
+        // The ACES-aware grading notice on the ACES 2.0 component's own inspector, where the toggle lives. Only while
+        // the profile's mode is ACES 2.0, as on the Custom Tone Mapping inspector.
+        internal static void DrawAces2GradingValidation(VolumeComponent inspected)
+        {
+            var profile = OwningProfile(inspected);
+            if (Resolve(profile, (CustomToneMapping c) => c.mode)?.value != ToneMappingMode.ACES2)
+                return;
+            DrawAces2GradingValidation(profile, HasUrpCustomToneMappingIntegration());
+        }
+
+        private static void DrawAces2GradingValidation(VolumeProfile profile, bool hasUrpModification)
+        {
+            if (Resolve(profile, (Aces2ToneMapping a) => a.acesAwareGrading)?.value != true)
+                return;
+
+            if (!hasUrpModification)
+            {
+                EditorGUILayout.HelpBox(
+                    "ACES 2.0 is grading in URP's standard spaces: ACES-aware grading needs the URP customization (README, Method 2). Customize URP, or turn off 'ACES-aware grading' on the ACES 2.0 Tone Mapping component.",
+                    MessageType.Warning);
+                DrawLink("Open README: Method 2", "https://github.com/aki-null/CustomToneMappingURP#method-2-urp-package-modification-recommended");
+            }
+            else if (GradesInLdr())
+            {
+                EditorGUILayout.HelpBox(UrpBridge.Aces2LdrGradingNotice + LdrExceptionNote, MessageType.Warning);
+                EditorGUILayout.Space();
+            }
+            else if (!UrpBridge.DeclaresAces2Grading(LutBuilderHdr()))
+            {
+                EditorGUILayout.HelpBox(UrpBridge.Aces2StandardGradingNotice, MessageType.Warning);
+                DrawLink("Open the upgrade steps", UrpBridge.UrpCustomizationUpgradeUrl);
+            }
+        }
+
+        // Found once, not on every repaint. A destroyed shader compares equal to null, so it is found again.
+        private static Shader _lutBuilderHdr;
+
+        private static Shader LutBuilderHdr()
+        {
+            if (_lutBuilderHdr == null)
+                _lutBuilderHdr = Shader.Find("Hidden/Universal Render Pipeline/LutBuilderHdr");
+            return _lutBuilderHdr;
+        }
+
+        // What the asset selects. URP still grades a camera in HDR when it outputs to an HDR display
+        // (UniversalRenderPipeline.CreatePostProcessingData), which an edit-time check cannot know.
+        private const string LdrExceptionNote = " Cameras that output to an HDR display are not affected, because URP grades them in HDR.";
+
+        private static bool GradesInLdr() =>
+            GraphicsSettings.currentRenderPipeline is UniversalRenderPipelineAsset asset &&
+            (asset.colorGradingMode != ColorGradingMode.HighDynamicRange || !asset.supportsHDR);
+
+        private static void DrawLink(string label, string url)
+        {
+            if (EditorGUILayout.LinkButton(label))
+                Application.OpenURL(url);
+            EditorGUILayout.Space();
         }
 
         private static bool HasUrpCustomToneMappingIntegration()

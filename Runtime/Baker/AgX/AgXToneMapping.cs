@@ -15,14 +15,19 @@ namespace CustomToneMapping.Baker.AgX
     {
         private AgXConfig _cfg;
         private float _hdrSdrRatio;
+        private float _sdrScale;
 
         public void Initialize(AgXConfig cfg)
         {
             _cfg = cfg;
             _hdrSdrRatio = cfg.HdrMaxNits / cfg.SdrMaxNits;
+            _sdrScale = 1f;
 
+            // A display dimmer than SDR white has no headroom: scale the SDR image to its peak.
             if (_hdrSdrRatio < 1f)
             {
+                if (_cfg.IsHdrOutput)
+                    _sdrScale = _hdrSdrRatio;
                 _cfg.IsHdrOutput = false;
             }
         }
@@ -76,7 +81,7 @@ namespace CustomToneMapping.Baker.AgX
                 return math.clamp(rgb, 0f, _hdrSdrRatio);
             }
 
-            return math.saturate(rgb);
+            return math.saturate(rgb) * _sdrScale;
         }
 
         public bool IsHDROutput => _cfg.IsHdrOutput;

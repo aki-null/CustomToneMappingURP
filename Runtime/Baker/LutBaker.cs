@@ -1,8 +1,5 @@
 using System;
 using System.Runtime.CompilerServices;
-using CustomToneMapping.Baker.GT;
-using CustomToneMapping.Baker.GT7;
-using CustomToneMapping.Baker.AgX;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
@@ -49,20 +46,9 @@ namespace CustomToneMapping.Baker
 
         public static void BakeStripLut(ILutConfig config, ref Texture2D texture)
         {
-            switch (config)
-            {
-                case GTConfig gtConfig:
-                    GTLutBaker.BakeStripLut(gtConfig, ref texture);
-                    break;
-                case GT7Config gt7Config:
-                    GT7LutBaker.BakeStripLut(gt7Config, ref texture);
-                    break;
-                case AgXConfig agxConfig:
-                    AgXLutBaker.BakeStripLut(agxConfig, ref texture);
-                    break;
-                default:
-                    throw new ArgumentException("Unsupported tone mapping configuration", nameof(config));
-            }
+            if (config is not IStripLutConfig strip)
+                throw new ArgumentException("Unsupported tone mapping configuration", nameof(config));
+            strip.BakeStripLut(ref texture);
         }
 
         public static bool TryChooseFormat(bool isHdrOutput, out GraphicsFormat format)
@@ -142,11 +128,8 @@ namespace CustomToneMapping.Baker
         internal static void BakeStripLut<T>(T toneMap, bool isHdrOutput, int lutSize, ref Texture2D texture)
             where T : struct, IToneMap
         {
-            if (!LutLayout.IsValidSize(lutSize))
-            {
-                throw new ArgumentOutOfRangeException(nameof(lutSize),
-                    $"LUT size must be between {MinLutSize} and {MaxLutSize}");
-            }
+            if (!LutLayout.TryValidateSize(lutSize, out var sizeError))
+                throw new ArgumentOutOfRangeException(nameof(lutSize), sizeError);
 
             using (BakeLutMarker.Auto())
             {
@@ -350,7 +333,7 @@ namespace CustomToneMapping.Baker
         }
 
         // ARRI LogC3 (SUP 3.x, EI 1000), linear scene exposure factors.
-        private static class AlexaLogC
+        internal static class AlexaLogC
         {
             // ARRI specification; keep in sync with Runtime/URP/Shaders/LogC.hlsl.
             // Unity's Color.hlsl uses a different F and normally omits the linear toe.

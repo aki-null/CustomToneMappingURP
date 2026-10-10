@@ -17,23 +17,26 @@ namespace CustomToneMapping.Baker.GT
         private float _l0; // Linear length after scale
         private float _S0, _S1; // Shoulder region bounds  
         private float _C2; // Shoulder curve parameter
-        private float _sdrCorrectionFactor;
+        private float _outputScale; // framebuffer to LUT value
         private float _framebufferTarget;
 
         public void InitializeAsHdr(GTConfig config)
         {
-            _config = config;
-            _sdrCorrectionFactor = 1.0f;
-            _framebufferTarget = config.TargetPeakNits / config.ReferenceLuminance;
-            InitializeCurveParameters();
+            config.IsHdrOutput = true;
+            Initialize(config);
         }
 
         public void InitializeAsSdr(GTConfig config)
         {
+            config.IsHdrOutput = false;
+            Initialize(config);
+        }
+
+        private void Initialize(GTConfig config)
+        {
             _config = config;
-            var fbPaperWhite = config.SdrPaperWhite / config.ReferenceLuminance;
-            _sdrCorrectionFactor = 1.0f / fbPaperWhite;
-            _framebufferTarget = config.SdrPaperWhite / config.ReferenceLuminance;
+            _outputScale = config.OutputScale;
+            _framebufferTarget = config.FramebufferTarget;
             InitializeCurveParameters();
         }
 
@@ -55,8 +58,7 @@ namespace CustomToneMapping.Baker.GT
         {
             var result = ApplyGtCurve(rgb);
 
-            // Apply SDR correction if needed
-            result *= _sdrCorrectionFactor;
+            result *= _outputScale;
 
             // Clamp to target for SDR
             if (!IsHDROutput)

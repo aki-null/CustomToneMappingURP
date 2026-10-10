@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <NoWarn>CS0169;CS0649;CS1591;CS0108;CS8981;CS0675</NoWarn>
+  </PropertyGroup>
+  <!-- The generated port uses Unity.Mathematics types: compile the package's own sources.
+       validate-reference.cjs passes -p:UnityMathematics=<Library/PackageCache/com.unity.mathematics@*/Unity.Mathematics>. -->
+  <ItemGroup>
+    <Compile Include="../../Runtime/Baker/ACES2/AcademyTransform.cs" />
+    <Compile Include="ReferenceCheck.cs" />
+    <Compile Include="UnityCollectionsShim.cs" />
+    <Compile Include="$(UnityMathematics)/**/*.cs" Exclude="$(UnityMathematics)/math_unity_conversion.cs;$(UnityMathematics)/PropertyAttributes.cs" />
+  </ItemGroup>
+</Project>
